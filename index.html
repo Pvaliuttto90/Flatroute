@@ -32,6 +32,7 @@
   --g1:#34c48b; --g2:#d8c23a; --g3:#f0913a; --g4:#ef5a4c; --alt:#8a9893;
   --shadow:0 8px 28px rgba(0,0,0,.5); color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--ink);font:15px/1.4 var(--body);overflow:hidden}
 #map{position:fixed;inset:0;z-index:0;background:var(--bg)}
@@ -42,12 +43,28 @@ body{background:var(--bg);color:var(--ink);font:15px/1.4 var(--body);overflow:hi
 .fab{position:fixed;z-index:500;right:calc(env(safe-area-inset-right,0px) + 12px);top:calc(env(safe-area-inset-top,0px) + 12px);
   width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);
   display:grid;place-items:center;box-shadow:var(--shadow);cursor:pointer}
-.sheet{position:fixed;z-index:600;left:0;right:0;bottom:0;max-height:72vh;display:flex;flex-direction:column;
-  background:var(--surface);border-top-left-radius:18px;border-top-right-radius:18px;box-shadow:var(--shadow);
-  padding-bottom:env(safe-area-inset-bottom,0px)}
-.sheet.min .body{display:none}
-.grab{border:0;background:none;width:100%;padding:8px 0 4px;cursor:pointer;display:grid;place-items:center}
-.grab span{width:40px;height:4px;border-radius:2px;background:var(--line)}
+.sheet{position:fixed;z-index:600;left:0;top:0;bottom:0;width:min(86vw,360px);display:flex;flex-direction:column;
+  background:var(--surface);border-radius:0 18px 18px 0;box-shadow:var(--shadow);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);
+  transition:transform .25s ease}
+.sheet.min{transform:translateX(calc(-100% - 12px));box-shadow:none}
+.sheet .body{flex:1;min-height:0;padding-top:14px}
+.drawer-btn{position:fixed;z-index:650;top:calc(env(safe-area-inset-top,0px) + 12px);left:calc(min(86vw,360px) - 54px);
+  width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);
+  display:grid;place-items:center;box-shadow:var(--shadow);cursor:pointer;transition:left .25s ease}
+.sheet.min + .drawer-btn{left:calc(env(safe-area-inset-left,0px) + 12px)}
+.sheet:not(.min) + .drawer-btn{box-shadow:none}
+@media (max-width:819px){ .brand{padding-right:50px} }
+.drawer-btn .open,.sheet.min + .drawer-btn .close{display:none}
+.sheet.min + .drawer-btn .open{display:block}
+.fbar{position:fixed;z-index:550;left:calc(env(safe-area-inset-left,0px) + 10px);right:calc(env(safe-area-inset-right,0px) + 10px);
+  bottom:calc(env(safe-area-inset-bottom,0px) + 22px);display:flex;gap:6px;align-items:stretch;
+  background:var(--ink);color:var(--surface);border-radius:14px;padding:6px;box-shadow:var(--shadow)}
+.fbar button{border:0;border-radius:10px;background:transparent;color:inherit;cursor:pointer;font:600 15px var(--display)}
+.fbar .fb-arrow{width:44px;background:rgba(255,255,255,.12)}
+.fbar .fb-mid{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:4px 6px}
+.fbar .fb-mid b{font:600 15px/1.2 var(--display);overflow-wrap:anywhere}
+.fbar .fb-mid span{font:600 12px var(--display);opacity:.7;font-variant-numeric:tabular-nums}
 .body{overflow-y:auto;padding:4px max(16px,env(safe-area-inset-right,0px)) 16px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
 .brand{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .brand h1{margin:0;font:700 26px/1 var(--display);letter-spacing:.01em}
@@ -138,8 +155,8 @@ body:not(.owner) .owner-only{display:none}
 .sflabel{position:absolute;left:30px;top:3px;white-space:nowrap;background:var(--ink);color:var(--surface);font:700 11px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;border-radius:6px}
 .startpin.on{background:var(--accent);color:var(--accent-ink)}
 @media (min-width:820px){
-  .sheet{left:calc(env(safe-area-inset-left,0px) + 12px);right:auto;top:12px;bottom:12px;width:380px;max-height:none;border-radius:18px}
-  .grab{display:none}
+  .sheet,.sheet.min{left:calc(env(safe-area-inset-left,0px) + 12px);top:12px;bottom:12px;width:380px;border-radius:18px;transform:none;box-shadow:var(--shadow);padding-top:0}
+  .drawer-btn,.fbar{display:none!important}
   .hint{left:calc(50% + 196px)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -153,7 +170,6 @@ body:not(.owner) .owner-only{display:none}
 </button>
 
 <section class="sheet" id="sheet">
-  <button class="grab" id="grab" aria-label="Show or hide controls"><span></span></button>
   <div class="body">
     <div class="brand"><h1>Flat<i>Route</i></h1><small id="pinlabel">No pin yet</small></div>
 
@@ -203,6 +219,15 @@ body:not(.owner) .owner-only{display:none}
     <section class="directions" id="directions" aria-label="Turn-by-turn directions"></section>
   </div>
 </section>
+<button class="drawer-btn" id="drawerBtn" aria-label="Show or hide controls">
+  <svg class="open" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  <svg class="close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+</button>
+<div class="fbar" id="fbar" hidden>
+  <button type="button" class="fb-arrow" id="fbPrev" aria-label="Previous turn">◀</button>
+  <button type="button" class="fb-mid" id="fbMid" aria-label="Open directions"><b id="fbNext"></b><span id="fbMile"></span></button>
+  <button type="button" class="fb-arrow" id="fbNextBtn" aria-label="Next turn">▶</button>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
@@ -878,7 +903,7 @@ function drawPin() {
   $('go').disabled = S.busy; $('go').textContent = S.busy ? 'Searching…' : 'Find flat routes';
 }
 function setPin(p) { S.pin = p; store.set('pin', p); drawPin(); clearRoutes(); }
-map.on('click', (e) => { if (!S.busy) setPin([e.latlng.lat, e.latlng.lng]); });
+map.on('click', (e) => { if (!S.busy) { setPin([e.latlng.lat, e.latlng.lng]); if (narrow()) setDrawer(true); } });
 $('locate').onclick = () => {
   if (!navigator.geolocation) return status('This browser can’t share your location. Tap the map instead.', true);
   navigator.geolocation.getCurrentPosition(
@@ -906,7 +931,19 @@ document.querySelectorAll('[data-step]').forEach((b) => b.onclick = () => { dist
 $('paths').onchange = (e) => { S.paths = e.target.checked; store.set('paths', S.paths); };
 $('streets').checked = S.streets; syncStreets();
 $('streets').onchange = (e) => { S.streets = e.target.checked; store.set('streets', S.streets); };
-$('grab').onclick = () => $('sheet').classList.toggle('min');
+const narrow = () => innerWidth < 820;
+function setDrawer(open) {
+  $('sheet').classList.toggle('min', !open);
+  $('drawerBtn').setAttribute('aria-expanded', String(open));
+  updateFbar();
+}
+function updateFbar() {
+  const show = narrow() && $('sheet').classList.contains('min') && S.routes && S.routes.length > 0;
+  $('fbar').hidden = !show;
+}
+$('drawerBtn').onclick = () => setDrawer($('sheet').classList.contains('min'));
+addEventListener('resize', updateFbar);
+if (narrow()) $('sheet').classList.add('min');
 
 function status(text, err = false, pct = null) {
   $('status').hidden = !text; $('status').classList.toggle('err', err);
@@ -1256,7 +1293,7 @@ function startName(G, r) {
 
 /* ---------- rendering ---------- */
 const gradeColor = (g) => css(g <= 0.01 ? '--g1' : g <= 0.025 ? '--g2' : g <= 0.04 ? '--g3' : '--g4');
-function clearRoutes() { S.routes = []; routeLayer.clearLayers(); turnLayer.clearLayers(); followLayer.clearLayers(); if ($('directions')) $('directions').innerHTML = ''; $('results').innerHTML = ''; }
+function clearRoutes() { S.routes = []; if ($('fbar')) $('fbar').hidden = true; routeLayer.clearLayers(); turnLayer.clearLayers(); followLayer.clearLayers(); if ($('directions')) $('directions').innerHTML = ''; $('results').innerHTML = ''; }
 function drawRoutes(fit) {
   routeLayer.clearLayers(); turnLayer.clearLayers();
   const surf = css('--surface');
@@ -1300,7 +1337,7 @@ function drawRoutes(fit) {
     const m = L.marker(x.start, { icon: L.divIcon({ className: '', html: i === S.sel ? `<div class="startpin on">${i + 1}</div><div class="sflabel">Start / Finish</div>` : `<div class="startpin">${i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: i === S.sel ? 1000 : 0 }).addTo(routeLayer);
     m.on('click', () => select(i));
   });
-  if (fit && r) map.fitBounds(L.latLngBounds(S.routes.flatMap((x) => [x.coords[0], ...x.coords.filter((_, j) => j % 10 === 0)])).pad(0.1), { paddingBottomRight: [0, innerWidth < 820 ? innerHeight * 0.35 : 0], paddingTopLeft: [innerWidth >= 820 ? 400 : 0, 0] });
+  if (fit && r) map.fitBounds(L.latLngBounds(S.routes.flatMap((x) => [x.coords[0], ...x.coords.filter((_, j) => j % 10 === 0)])).pad(0.1), { paddingBottomRight: [0, 0], paddingTopLeft: [innerWidth >= 820 ? 400 : 0, 0] });
 }
 /* ---------- turns: compare heading into and out of each junction ---------- */
 const TURN_SVG = {
@@ -1395,6 +1432,7 @@ function drawFollow(pan) {
   $('fwMile').textContent = (followD / MI).toFixed(2) + ' of ' + (r.len / MI).toFixed(2) + ' mi';
   $('fwNext').textContent = next ? `${next.text} in ${fmtDist(next.dist - followD)}` : 'You’re back at the start';
   $('fwRange').value = followD;
+  $('fbNext').textContent = $('fwNext').textContent; $('fbMile').textContent = 'Route ' + (S.sel + 1) + ' · ' + $('fwMile').textContent;
   document.querySelectorAll('.cue').forEach((el) => el.classList.toggle('cur', +el.dataset.d <= followD + 5 && (!el.nextElementSibling || +el.nextElementSibling.dataset.d > followD + 5)));
   if (pan) { const b = map.getBounds().pad(-0.2); if (!b.contains(pt)) focusAt(); }
 }
@@ -1403,9 +1441,17 @@ function focusAt() {
   const pt = pointAt(r, followD).pt;
   // keep the point clear of the control sheet: left rail on desktop, bottom sheet on phones
   const wide = innerWidth >= 820, z = Math.max(map.getZoom(), 16);
-  const px = map.project(pt, z).subtract([wide ? 200 : 0, wide ? 0 : -innerHeight * 0.2]);
+  const px = map.project(pt, z).subtract([wide ? 200 : 0, wide ? 0 : -50]);
   map.stop(); map.setView(map.unproject(px, z), z, { animate: z === map.getZoom() });
 }
+function jumpCue(dir) {
+  const r = S.routes[S.sel]; if (!r) return;
+  const list = cuesOf(r).map((c) => c.dist);
+  const t = dir > 0 ? list.find((d) => d > followD + 5) : [...list].reverse().find((d) => d < followD - 5);
+  if (t != null) { followD = t; drawFollow(false); focusAt(); }
+}
+$('fbPrev').onclick = () => jumpCue(-1); $('fbNextBtn').onclick = () => jumpCue(1);
+$('fbMid').onclick = () => setDrawer(true);
 function fmtDist(m) { return m < 0.2 * MI ? Math.round(m * FT / 10) * 10 + ' ft' : (m / MI).toFixed(2) + ' mi'; }
 function renderDirections() {
   const box = $('directions'); const r = S.routes[S.sel];
@@ -1420,13 +1466,8 @@ function renderDirections() {
     <div class="fw-next" id="fwNext"></div>
     <ol class="cues">${cues.map((c, k) => `<li class="cue" data-d="${c.dist.toFixed(0)}" data-k="${k}"><span class="ic ${c.kind}">${CUE_ICON[c.kind]}</span><span class="tx">${c.text.replace(/</g, '&lt;')}</span><span class="mi">${(c.dist / MI).toFixed(2)}</span></li>`).join('')}</ol>`;
   $('fwRange').oninput = (e) => { followD = +e.target.value; drawFollow(true); };
-  const jump = (dir) => {
-    const list = cues.map((c) => c.dist);
-    const t = dir > 0 ? list.find((d) => d > followD + 5) : [...list].reverse().find((d) => d < followD - 5);
-    if (t != null) { followD = t; drawFollow(false); focusAt(); }
-  };
-  $('fwPrev').onclick = () => jump(-1); $('fwNextBtn').onclick = () => jump(1);
-  box.querySelectorAll('.cue').forEach((el) => el.onclick = () => { followD = +el.dataset.d; drawFollow(false); focusAt(); });
+  $('fwPrev').onclick = () => jumpCue(-1); $('fwNextBtn').onclick = () => jumpCue(1);
+  box.querySelectorAll('.cue').forEach((el) => el.onclick = () => { followD = +el.dataset.d; if (narrow()) setDrawer(false); drawFollow(false); focusAt(); });
   followD = 0; drawFollow(false);
 }
 const CUE_ICON = {
@@ -1480,7 +1521,11 @@ function renderResults() {
     card.querySelector('.where').textContent = r.done != null
       ? (r.doneNames.length ? 'Finishes: ' + r.doneNames.join(', ') : 'Finishes no streets') + (r.partialNames.length ? ' · Leaves partial: ' + r.partialNames.join(', ') : '') + (r.longLen > 50 ? ` · plus ${(r.longLen / MI).toFixed(1)} mi on long streets` : '')
       : (r.type === 'ob' ? 'Out & back' : 'Loop') + (r.name ? ' · ' + r.name : '');
-    card.addEventListener('click', (e) => { if (e.target.closest('a,button')) return; select(i); });
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('a,button')) return;
+      select(i);
+      if (narrow()) { setDrawer(false); const rr = S.routes[i]; map.fitBounds(L.latLngBounds(rr.coords).pad(0.1), { paddingBottomRight: [0, 90], paddingTopLeft: [0, 60] }); }
+    });
     card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(i); } });
     card.querySelector('button').onclick = () => exportGPX(r, i);
     box.appendChild(card);
