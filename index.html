@@ -1,0 +1,1506 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14211f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>FlatRoute</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-bleed map; one control sheet (bottom on phones, left rail on desktop). */
+:root{
+  --bg:#f3f5f2; --surface:#ffffff; --ink:#14211f; --muted:#5c6b67; --line:#d9e0dc;
+  --accent:#0d7a6f; --accent-ink:#ffffff; --accent-soft:#dcefeb;
+  --g1:#1a9e6e; --g2:#b9a21a; --g3:#e07b1f; --g4:#d23b2f; --alt:#7c8a86;
+  --shadow:0 8px 28px rgba(20,33,31,.18);
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1716; --surface:#17211f; --ink:#e6eeeb; --muted:#93a39e; --line:#2a3633;
+  --accent:#3cc2ad; --accent-ink:#06201c; --accent-soft:#163a35;
+  --g1:#34c48b; --g2:#d8c23a; --g3:#f0913a; --g4:#ef5a4c; --alt:#8a9893;
+  --shadow:0 8px 28px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1716; --surface:#17211f; --ink:#e6eeeb; --muted:#93a39e; --line:#2a3633;
+  --accent:#3cc2ad; --accent-ink:#06201c; --accent-soft:#163a35;
+  --g1:#34c48b; --g2:#d8c23a; --g3:#f0913a; --g4:#ef5a4c; --alt:#8a9893;
+  --shadow:0 8px 28px rgba(0,0,0,.5); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.4 var(--body);overflow:hidden}
+#map{position:fixed;inset:0;z-index:0;background:var(--bg)}
+.leaflet-container{font-family:var(--body)}
+.hint{position:fixed;z-index:500;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 12px);
+  background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:8px 14px;
+  font:600 14px var(--display);letter-spacing:.04em;text-transform:uppercase;box-shadow:var(--shadow);white-space:nowrap}
+.fab{position:fixed;z-index:500;right:calc(env(safe-area-inset-right,0px) + 12px);top:calc(env(safe-area-inset-top,0px) + 12px);
+  width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);
+  display:grid;place-items:center;box-shadow:var(--shadow);cursor:pointer}
+.sheet{position:fixed;z-index:600;left:0;right:0;bottom:0;max-height:72vh;display:flex;flex-direction:column;
+  background:var(--surface);border-top-left-radius:18px;border-top-right-radius:18px;box-shadow:var(--shadow);
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+.sheet.min .body{display:none}
+.grab{border:0;background:none;width:100%;padding:8px 0 4px;cursor:pointer;display:grid;place-items:center}
+.grab span{width:40px;height:4px;border-radius:2px;background:var(--line)}
+.body{overflow-y:auto;padding:4px max(16px,env(safe-area-inset-right,0px)) 16px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
+.brand{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.brand h1{margin:0;font:700 26px/1 var(--display);letter-spacing:.01em}
+.brand h1 i{font-style:normal;color:var(--accent)}
+.brand small{color:var(--muted);font-size:13px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.lab{font:600 12px var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+.lab b{color:var(--ink);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.stepper{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.stepper button{width:40px;border:0;background:var(--bg);color:var(--ink);font:600 20px var(--display);cursor:pointer}
+.stepper input{flex:1;min-width:0;border:0;text-align:center;font:600 20px var(--display);background:var(--surface);color:var(--ink);font-variant-numeric:tabular-nums}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;background:var(--bg)}
+.seg button{flex:1;border:0;border-radius:7px;padding:8px 4px;background:transparent;color:var(--muted);font:600 14px var(--display);letter-spacing:.03em;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.check{display:flex;margin-top:4px;align-items:center;gap:8px;font-size:14px;color:var(--ink)}
+.check input{accent-color:var(--accent);width:18px;height:18px}
+.go{border:0;border-radius:12px;padding:14px;background:var(--accent);color:var(--accent-ink);font:700 18px var(--display);letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.go:disabled{opacity:.55;cursor:default}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.status .bar{height:4px;border-radius:2px;background:var(--line);overflow:hidden}
+.status .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.status.err{color:var(--g4)}
+.results{display:flex;flex-direction:column;gap:10px}
+.card{border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px;cursor:pointer;background:var(--surface);text-align:left;color:var(--ink);font:inherit}
+.card[aria-pressed=true]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.card .top{display:flex;align-items:center;gap:10px}
+.rank{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font:700 16px var(--display);background:var(--ink);color:var(--surface);flex:none}
+.card[aria-pressed=true] .rank{background:var(--accent);color:var(--accent-ink)}
+.stats{display:flex;gap:16px;flex-wrap:wrap}
+.stat{display:flex;flex-direction:column}
+.stat b{font:700 22px/1 var(--display);font-variant-numeric:tabular-nums}
+.stat b small{font:600 13px var(--display);color:var(--muted)}
+.stat span{font:600 11px var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.where{font-size:13px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
+.stat b.bad{color:var(--g4)}
+.prof{width:100%;height:56px;display:block}
+.prof text{fill:var(--muted);font:600 10px var(--display)}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.calib{display:flex;flex-direction:column;gap:10px;font-size:14px}
+.calib h2{margin:0;font:700 20px var(--display)}
+.calib .big{font:700 30px/1 var(--display);font-variant-numeric:tabular-nums}
+.calib .note{color:var(--muted);font-size:13px}
+.calib .tbl{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.calib table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.calib th,.calib td{padding:5px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.calib th:first-child,.calib td:first-child{text-align:left}
+.calib th{position:sticky;top:0;background:var(--surface);font:600 11px var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.calib .pair{display:flex;gap:18px;flex-wrap:wrap}
+.acts a,.acts button{flex:1;text-align:center;border:1px solid var(--line);border-radius:10px;padding:9px 6px;background:var(--bg);color:var(--ink);font:600 14px var(--display);letter-spacing:.04em;text-transform:uppercase;text-decoration:none;cursor:pointer}
+.acts .filebtn{flex:1;text-align:center;border:1px solid var(--line);border-radius:10px;padding:9px 6px;background:var(--bg);color:var(--ink);font:600 14px var(--display);letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
+.acts .filebtn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.acts .primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font:600 12px var(--display);letter-spacing:.04em;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:4px}
+.legend i{width:14px;height:4px;border-radius:2px;display:block}
+.warn{font-size:13px;color:var(--g3)}
+.pin{width:22px;height:22px;border-radius:50%;background:var(--accent);border:3px solid var(--surface);box-shadow:var(--shadow)}
+.startpin{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:700 14px var(--display);background:var(--ink);color:var(--surface);border:2px solid var(--surface);box-shadow:var(--shadow)}
+.turn{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;background:var(--ink);color:var(--surface);border:2px solid var(--surface);box-shadow:var(--shadow)}
+.turn.u{background:var(--g3);color:#fff}
+.directions{display:flex;flex-direction:column;gap:8px}
+.directions:empty{display:none}
+.dir-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.dir-head h3{margin:0;font:700 18px var(--display)}
+.dir-head span{font:600 13px var(--display);color:var(--muted);font-variant-numeric:tabular-nums}
+.fw{display:flex;align-items:center;gap:8px}
+.fw input{flex:1;min-width:0;accent-color:var(--ink)}
+.fw button{width:40px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:13px;cursor:pointer}
+.fw-next{font:600 15px var(--display);background:var(--ink);color:var(--surface);border-radius:10px;padding:10px 12px}
+.cues{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;max-height:300px;overflow:auto}
+.cue{display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:14px}
+.cue:last-child{border-bottom:0}
+.cue:hover{background:var(--bg)}
+.cue.cur{background:var(--accent-soft)}
+.cue .mi{font:600 12px var(--display);color:var(--muted);font-variant-numeric:tabular-nums}
+.cue .ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:var(--ink);color:var(--surface);font-size:12px}
+.cue .ic.U{background:var(--g3);color:#fff}
+.cue .ic.S,.cue .ic.F{background:var(--accent);color:var(--accent-ink)}
+.cue .ic.C{background:var(--line);color:var(--ink)}
+.me{width:28px;height:28px;border-radius:50%;background:var(--accent);border:3px solid var(--surface);box-shadow:var(--shadow);position:relative}
+.me i{position:absolute;left:50%;top:-9px;width:0;height:0;margin-left:-6px;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:9px solid var(--accent);transform-origin:6px 20px;transform:rotate(var(--r))}
+.mile{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:var(--surface);color:var(--ink);border:2px solid var(--ink);font:700 11px var(--display);box-shadow:var(--shadow)}
+.arrow{width:16px;height:16px;display:grid;place-items:center;color:var(--surface);font-size:11px;line-height:1;text-shadow:0 0 2px var(--ink),0 0 2px var(--ink)}
+.sflabel{position:absolute;left:30px;top:3px;white-space:nowrap;background:var(--ink);color:var(--surface);font:700 11px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;border-radius:6px}
+.startpin.on{background:var(--accent);color:var(--accent-ink)}
+@media (min-width:820px){
+  .sheet{left:calc(env(safe-area-inset-left,0px) + 12px);right:auto;top:12px;bottom:12px;width:380px;max-height:none;border-radius:18px}
+  .grab{display:none}
+  .hint{left:calc(50% + 196px)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="map" aria-label="Map"></div>
+<div class="hint" id="hint">Tap the map to drop a pin</div>
+<button class="fab" id="locate" aria-label="Use my location" title="Use my location">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+</button>
+
+<section class="sheet" id="sheet">
+  <button class="grab" id="grab" aria-label="Show or hide controls"><span></span></button>
+  <div class="body">
+    <div class="brand"><h1>Flat<i>Route</i></h1><small id="pinlabel">No pin yet</small></div>
+
+    <div class="row">
+      <div class="field">
+        <div class="lab"><label for="radius">Start within</label><b id="radiusOut">1.0 mi</b></div>
+        <input type="range" id="radius" min="0.25" max="5" step="0.25" value="1">
+      </div>
+      <div class="field">
+        <div class="lab"><label for="dist">Distance (mi)</label></div>
+        <div class="stepper"><button type="button" data-step="-0.5" aria-label="Shorter">−</button><input id="dist" type="number" inputmode="decimal" min="0.5" max="26.2" step="0.1" value="5"><button type="button" data-step="0.5" aria-label="Longer">+</button></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="lab">Route</div>
+      <div class="seg" id="type"><button data-v="ob" aria-pressed="true">Out &amp; back</button><button data-v="loop" aria-pressed="false">Loop</button></div>
+      <label class="check" id="streetsRow"><input type="checkbox" id="streets"> Finish streets (runs every segment of each street it takes; long streets can be partial)</label>
+    </div>
+    <div class="row">
+      <div class="field">
+        <div class="lab">Flattest by</div>
+        <div class="seg" id="mode"><button data-v="grade" aria-pressed="true">Max grade</button><button data-v="climb" aria-pressed="false">Climb</button></div>
+      </div>
+      <div class="field">
+        <div class="lab">Tolerance</div>
+        <div class="seg" id="tol"><button data-v="0.1" aria-pressed="false">±.1</button><button data-v="0.25" aria-pressed="true">±.25</button><button data-v="0.5" aria-pressed="false">±.5</button></div>
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="paths"> Include trails and paths (streets only when off)</label>
+
+    <div class="field history">
+      <div class="lab">My runs <b id="histOut">None loaded</b></div>
+      <div class="acts">
+        <label class="filebtn">Load history<input type="file" id="histFile" accept=".json,application/json" hidden></label>
+        <label class="filebtn">Add runs<input type="file" id="gpxFile" accept=".gpx,.tcx" multiple hidden></label>
+        <label class="filebtn">Check climb<input type="file" id="checkFile" accept=".gpx" hidden></label>
+        <label class="filebtn">Calibrate<input type="file" id="calibFile" accept=".json,application/json" hidden></label>
+        <button type="button" id="histClear" hidden>Clear</button>
+      </div>
+    </div>
+
+    <button class="go" id="go" disabled>Drop a pin first</button>
+    <div class="status" id="status" hidden><span id="statusText"></span><div class="bar"><i id="bar"></i></div></div>
+
+    <div class="results" id="results"></div>
+    <section class="directions" id="directions" aria-label="Turn-by-turn directions"></section>
+  </div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* FlatRoute engine: street graph, grade profiles, route search. No DOM. */
+(function (root) {
+  'use strict';
+  const RE = 6371008.8, D2R = Math.PI / 180;
+
+  function hav(lat1, lon1, lat2, lon2) {
+    const dLat = (lat2 - lat1) * D2R, dLon = (lon2 - lon1) * D2R;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * D2R) * Math.cos(lat2 * D2R) * Math.sin(dLon / 2) ** 2;
+    return 2 * RE * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+  function dest(lat, lon, brgDeg, d) {
+    const b = brgDeg * D2R, dr = d / RE, la = lat * D2R, lo = lon * D2R;
+    const la2 = Math.asin(Math.sin(la) * Math.cos(dr) + Math.cos(la) * Math.sin(dr) * Math.cos(b));
+    const lo2 = lo + Math.atan2(Math.sin(b) * Math.sin(dr) * Math.cos(la), Math.cos(dr) - Math.sin(la) * Math.sin(la2));
+    return [la2 / D2R, lo2 / D2R];
+  }
+
+  /* ---------- min-heap ---------- */
+  class Heap {
+    constructor() { this.k = []; this.v = []; }
+    get size() { return this.k.length; }
+    clear() { this.k.length = 0; this.v.length = 0; }
+    push(key, val) {
+      const k = this.k, v = this.v; let i = k.length; k.push(key); v.push(val);
+      while (i > 0) { const p = (i - 1) >> 1; if (k[p] <= key) break; k[i] = k[p]; v[i] = v[p]; i = p; }
+      k[i] = key; v[i] = val;
+    }
+    pop() {
+      const k = this.k, v = this.v, topK = k[0], topV = v[0];
+      const lk = k.pop(), lv = v.pop(), n = k.length;
+      if (n) {
+        let i = 0;
+        for (;;) {
+          let c = 2 * i + 1; if (c >= n) break;
+          if (c + 1 < n && k[c + 1] < k[c]) c++;
+          if (k[c] >= lk) break;
+          k[i] = k[c]; v[i] = v[c]; i = c;
+        }
+        k[i] = lk; v[i] = lv;
+      }
+      this.lastKey = topK; return topV;
+    }
+  }
+
+  /* ---------- graph from Overpass JSON ---------- */
+  function buildGraph(osm) {
+    const coord = new Map(), ways = [];
+    for (const el of osm.elements) {
+      if (el.type === 'node') coord.set(el.id, [el.lat, el.lon]);
+      else if (el.type === 'way' && el.nodes) ways.push(el);
+    }
+    const cnt = new Map();
+    for (const w of ways) for (const id of w.nodes) cnt.set(id, (cnt.get(id) || 0) + 1);
+    const vIndex = new Map(), V = [], E = [];
+    const vid = (id) => { let i = vIndex.get(id); if (i === undefined) { i = V.length; vIndex.set(id, i); V.push(coord.get(id)); } return i; };
+    for (const w of ways) {
+      const ids = w.nodes.filter((id) => coord.has(id));
+      if (ids.length < 2) continue;
+      const t = w.tags || {};
+      const flat = !!(t.bridge && t.bridge !== 'no') || !!(t.tunnel && t.tunnel !== 'no');
+      let s = 0;
+      for (let i = 1; i < ids.length; i++) {
+        if (i === ids.length - 1 || cnt.get(ids[i]) > 1) {
+          const pts = ids.slice(s, i + 1).map((id) => coord.get(id));
+          let len = 0;
+          for (let j = 1; j < pts.length; j++) len += hav(pts[j - 1][0], pts[j - 1][1], pts[j][0], pts[j][1]);
+          const a = vid(ids[s]), b = vid(ids[i]);
+          if (len > 0.5 && a !== b) E.push({ a, b, pts, len, bridge: flat, name: t.name || '' });
+          s = i;
+        }
+      }
+    }
+    const adj = V.map(() => []);
+    E.forEach((e, i) => { adj[e.a].push(i); adj[e.b].push(i); });
+    return { V, E, adj };
+  }
+
+  /* ---------- elevation profiles & grades ---------- */
+  const STEP = 20, WIN = 100, GCAP = 0.25;
+  /* Gaussian-smooth an elevation profile over distance, then count climb with a hysteresis
+     threshold so DEM noise of a few feet doesn't add up to phantom hills. */
+  const CLIMB = { sigma: 40, hyst: 1.5 };
+  function setClimb(sigma, hyst) { CLIMB.sigma = sigma; CLIMB.hyst = hyst; }
+  function smoothClimb(d, z, sigma = CLIMB.sigma, hyst = CLIMB.hyst) {
+    const n = d.length;
+    if (n < 2) return { up: 0, dn: 0, zs: z.slice() };
+    const zs = new Array(n); let lo = 0;
+    for (let i = 0; i < n; i++) {
+      while (d[i] - d[lo] > 3 * sigma) lo++;
+      let sw = 0, sz = 0;
+      for (let j = lo; j < n && d[j] - d[i] <= 3 * sigma; j++) {
+        const w = Math.exp(-((d[j] - d[i]) ** 2) / (2 * sigma * sigma)); sw += w; sz += w * z[j];
+      }
+      zs[i] = sz / sw;
+    }
+    let up = 0, dn = 0, ref = zs[0];
+    for (let i = 1; i < n; i++) {
+      const dz = zs[i] - ref;
+      if (dz >= hyst) { up += dz; ref = zs[i]; } else if (dz <= -hyst) { dn -= dz; ref = zs[i]; }
+    }
+    return { up, dn, zs };
+  }
+  function computeProfiles(G, elev) {
+    for (const e of G.E) {
+      // resample along polyline
+      const d = [0], ll = [e.pts[0]];
+      let acc = 0, next = STEP;
+      for (let j = 1; j < e.pts.length; j++) {
+        const p = e.pts[j - 1], q = e.pts[j];
+        const seg = hav(p[0], p[1], q[0], q[1]);
+        while (next < acc + seg) {
+          const f = (next - acc) / seg;
+          d.push(next); ll.push([p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]);
+          next += STEP;
+        }
+        acc += seg;
+      }
+      if (e.len - d[d.length - 1] > 2) { d.push(e.len); ll.push(e.pts[e.pts.length - 1]); }
+      else { d[d.length - 1] = e.len; ll[ll.length - 1] = e.pts[e.pts.length - 1]; }
+      let z = ll.map((p) => elev(p[0], p[1]));
+      if (e.bridge) { // DEM shows the ground under bridges; interpolate deck between abutments
+        const z0 = z[0], z1 = z[z.length - 1];
+        z = d.map((x) => z0 + (z1 - z0) * (x / e.len));
+      } else if (z.length > 2) {
+        z = smoothClimb(d, z, 30, 0).zs;
+      }
+      let up = 0, dn = 0;
+      for (let i = 1; i < z.length; i++) { const dz = z[i] - z[i - 1]; if (dz > 0) up += dz; else dn -= dz; }
+      up = Math.max(0, up - 0.3); dn = Math.max(0, dn - 0.3); // shave per-segment noise for ranking
+      let g = 0, j = 0;
+      for (let i = 0; i < d.length - 1; i++) {
+        if (j < i + 1) j = i + 1;
+        while (j < d.length - 1 && d[j] - d[i] < WIN) j++;
+        const gr = Math.abs(z[j] - z[i]) / Math.max(d[j] - d[i], WIN);
+        if (gr > g) g = gr;
+        if (d[j] - d[i] < WIN) break;
+      }
+      e.d = d; e.z = z; e.up = up; e.dn = dn; e.g = Math.min(g, GCAP);
+    }
+    return G;
+  }
+
+  /* ---------- run history: mark edges already run ---------- */
+  function markRun(G, has) {
+    let n = 0;
+    for (const e of G.E) {
+      if (!has) { e.run = false; continue; }
+      let hit = 0, tot = 0, acc = 0, next = 0;
+      for (let j = 1; j < e.pts.length; j++) {
+        const p = e.pts[j - 1], q = e.pts[j], seg = hav(p[0], p[1], q[0], q[1]);
+        while (next <= acc + seg) {
+          const f = seg ? (next - acc) / seg : 0;
+          tot++; if (has(p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f)) hit++;
+          next += 12;
+        }
+        acc += seg;
+      }
+      e.run = tot > 0 && hit / tot >= 0.75;
+      if (e.run) n++;
+    }
+    return n;
+  }
+
+  /* ---------- searcher (reusable typed arrays) ---------- */
+  class Searcher {
+    constructor(G) {
+      const n = G.V.length;
+      this.G = G; this.n = n;
+      this.dist = new Float64Array(n); this.seen = new Int32Array(n); this.done = new Int32Array(n);
+      this.pe = new Int32Array(n); this.pu = new Int32Array(n);
+      this.cUp = new Float64Array(n); this.cDn = new Float64Array(n); this.cMx = new Float64Array(n);
+      this.used = new Int32Array(G.E.length);
+      this.stamp = 0; this.useStamp = 0; this.heap = new Heap();
+      // spatial grid for snapping
+      this.cell = 0.002; this.grid = new Map();
+      G.V.forEach((p, i) => {
+        if (!G.adj[i].length) return;
+        const k = Math.floor(p[0] / this.cell) + ',' + Math.floor(p[1] / this.cell);
+        let a = this.grid.get(k); if (!a) this.grid.set(k, (a = [])); a.push(i);
+      });
+    }
+    nearest(lat, lon, maxR = 3) {
+      const ci = Math.floor(lat / this.cell), cj = Math.floor(lon / this.cell), V = this.G.V;
+      let best = -1, bd = Infinity;
+      for (let r = 0; r <= maxR; r++) {
+        for (let i = ci - r; i <= ci + r; i++) for (let j = cj - r; j <= cj + r; j++) {
+          if (Math.max(Math.abs(i - ci), Math.abs(j - cj)) !== r) continue;
+          const a = this.grid.get(i + ',' + j); if (!a) continue;
+          for (const v of a) { const d = hav(lat, lon, V[v][0], V[v][1]); if (d < bd) { bd = d; best = v; } }
+        }
+        if (best >= 0 && r >= 1) break;
+      }
+      return best;
+    }
+    pathTo(u) {
+      const steps = [];
+      while (this.pe[u] >= 0) { const e = this.pe[u], p = this.pu[u]; steps.push({ e, fwd: this.G.E[e].a === p, frac: 1 }); u = p; }
+      return steps.reverse();
+    }
+    /* Out-and-back: shortest-distance tree on edges with grade <= gmax; turn around at exactly L. */
+    outBack(s, L, gmax, mode) {
+      const G = this.G, E = G.E, h = this.heap, st = ++this.stamp;
+      h.clear();
+      this.dist[s] = 0; this.seen[s] = st; this.pe[s] = -1; this.cUp[s] = 0; this.cDn[s] = 0; this.cMx[s] = 0;
+      h.push(0, s);
+      let best = null, bestScore = Infinity;
+      while (h.size) {
+        const u = h.pop(), d = h.lastKey;
+        if (this.done[u] === st || d > this.dist[u]) continue;
+        this.done[u] = st;
+        if (d >= L) break;
+        for (const ei of G.adj[u]) {
+          const ed = E[ei]; if (ed.g > gmax) continue;
+          const fwd = ed.a === u, v = fwd ? ed.b : ed.a, nd = d + ed.len;
+          const up = fwd ? ed.up : ed.dn, dn = fwd ? ed.dn : ed.up;
+          if (nd >= L) {
+            if (ei === this.pe[u]) continue; // never turn around by doubling back over the block we just ran
+            const f = (L - d) / ed.len, tu = this.cUp[u] + up * f, td = this.cDn[u] + dn * f;
+            const mx = Math.max(this.cMx[u], ed.g), climb = tu + td;
+            const sc = mode === 'grade' ? Math.round(mx * 1000) * 1e5 + climb : climb * 100 + mx * 100;
+            if (sc < bestScore) { bestScore = sc; best = { u, e: ei, fwd, frac: f }; }
+          } else if (this.done[v] !== st && (this.seen[v] !== st || nd < this.dist[v])) {
+            this.seen[v] = st; this.dist[v] = nd; this.pe[v] = ei; this.pu[v] = u;
+            this.cUp[v] = this.cUp[u] + up; this.cDn[v] = this.cDn[u] + dn; this.cMx[v] = Math.max(this.cMx[u], ed.g);
+            h.push(nd, v);
+          }
+        }
+      }
+      if (!best) return null;
+      const steps = this.pathTo(best.u);
+      steps.push({ e: best.e, fwd: best.fwd, frac: best.frac });
+      return steps;
+    }
+    /* Shortest-distance tree back to start over edges with grade <= gmax (bounded). */
+    homeTree(s, gmax, maxR) {
+      const G = this.G, E = G.E, h = this.heap, st = ++this.stamp;
+      h.clear(); this.dist[s] = 0; this.seen[s] = st; this.pe[s] = -1; h.push(0, s);
+      while (h.size) {
+        const u = h.pop(), d = h.lastKey;
+        if (this.done[u] === st || d > this.dist[u]) continue;
+        this.done[u] = st;
+        if (d > maxR) break;
+        for (const ei of G.adj[u]) {
+          const ed = E[ei]; if (ed.g > gmax) continue;
+          const v = ed.a === u ? ed.b : ed.a, nd = d + ed.len;
+          if (this.done[v] !== st && (this.seen[v] !== st || nd < this.dist[v])) {
+            this.seen[v] = st; this.dist[v] = nd; this.pe[v] = ei; this.pu[v] = u; h.push(nd, v);
+          }
+        }
+      }
+      this.homeSt = st;
+    }
+    home(v) { return this.done[v] === this.homeSt ? this.dist[v] : Infinity; }
+    /* Wandering loop: biased random walk that always keeps enough budget to get home, then takes the shortest way back. */
+    walk(s, D, tol, gmax, streets, rnd, o = {}) {
+      const G = this.G, E = G.E, us = ++this.useStamp, steps = [], names = new Set();
+      const hi = D + tol * 0.8, lo = D - tol * 0.5;
+      let u = o.u0 != null ? o.u0 : s, t = o.t0 || 0, prev = -1;
+      const HT = o.homeT, home = HT ? (v) => HT.d(v) : (v) => home(v);
+      const cs = [], ws = [];
+      for (let k = 0; k < 6000; k++) {
+        if (t + home(u) >= lo) break;
+        cs.length = 0; ws.length = 0; let tot = 0;
+        const deg = G.adj[u].length;
+        for (const ei of G.adj[u]) {
+          const ed = E[ei]; if (ed.g > gmax) continue;
+          if (o.allow && !o.allow(ei)) continue;
+          const v = ed.a === u ? ed.b : ed.a;
+          if (t + ed.len + home(v) > hi) continue;
+          let w = 1;
+          if (ei === prev && deg > 1) w *= 0.02;
+          if (this.used[ei] !== us) {
+            if (streets) {
+              w *= ed.run ? 3 : 14;
+              if (!ed.run && ed.name && !names.has(ed.name)) w *= 4;
+            } else w *= 3;
+          } else w *= 0.1;
+          w *= Math.exp(-ed.g / (streets ? 0.02 : 0.008));
+          cs.push(ei); ws.push(w); tot += w;
+        }
+        if (!cs.length) break;
+        let r = rnd() * tot, i = 0;
+        while (i < ws.length - 1 && r > ws[i]) { r -= ws[i]; i++; }
+        const ei = cs[i], ed = E[ei], fwd = ed.a === u;
+        steps.push({ e: ei, fwd, frac: 1 }); this.used[ei] = us;
+        if (ed.name && !ed.run) names.add(ed.name);
+        t += ed.len; u = fwd ? ed.b : ed.a; prev = ei;
+      }
+      if (home(u) === Infinity) return null;
+      const pe = HT ? HT.pe : this.pe, pu = HT ? HT.pu : this.pu;
+      while (u !== s) {
+        const ei = pe[u]; if (ei < 0) return null;
+        steps.push({ e: ei, fwd: E[ei].a === u, frac: 1 }); u = pu[u];
+      }
+      return o.u0 != null || steps.length >= 3 ? steps : null;
+    }
+  }
+
+  /* ---------- street completion planner ----------
+     Streets are groups of not-yet-run segments sharing a name. The planner strings whole
+     streets together (every segment, dead ends in and back out), connecting them over
+     streets that are already done where it can, then pads to distance and heads home. */
+  class Tree {
+    constructor(G) {
+      const n = G.V.length; this.G = G; this.h = new Heap(); this.stamp = 0;
+      this.cost = new Float64Array(n); this.len = new Float64Array(n);
+      this.seen = new Int32Array(n); this.done = new Int32Array(n); this.pe = new Int32Array(n); this.pu = new Int32Array(n);
+    }
+    run(s, gmax, maxLen, penal) {
+      const G = this.G, E = G.E, h = this.h, st = ++this.stamp;
+      h.clear(); this.cost[s] = 0; this.len[s] = 0; this.seen[s] = st; this.pe[s] = -1; h.push(0, s);
+      while (h.size) {
+        const u = h.pop(), c = h.lastKey;
+        if (this.done[u] === st || c > this.cost[u]) continue;
+        this.done[u] = st;
+        for (const ei of G.adj[u]) {
+          const ed = E[ei]; if (ed.g > gmax) continue;
+          const v = ed.a === u ? ed.b : ed.a, nl = this.len[u] + ed.len;
+          if (nl > maxLen || this.done[v] === st) continue;
+          const nc = c + ed.len * (penal(ei) ? 3 : 1);
+          if (this.seen[v] !== st || nc < this.cost[v]) { this.seen[v] = st; this.cost[v] = nc; this.len[v] = nl; this.pe[v] = ei; this.pu[v] = u; h.push(nc, v); }
+        }
+      }
+    }
+    d(v) { return this.done[v] === this.stamp ? this.len[v] : Infinity; }
+    path(v) {
+      const out = [];
+      while (this.pe[v] >= 0) { const e = this.pe[v], p = this.pu[v]; out.push({ e, fwd: this.G.E[e].a === p, frac: 1 }); v = p; }
+      return out.reverse();
+    }
+  }
+  function buildPieces(G, D, area) {
+    const E = G.E, byName = new Map(), edgeSid = new Int32Array(E.length).fill(-1);
+    E.forEach((e, i) => { if (!e.name || e.run) return; let a = byName.get(e.name); if (!a) byName.set(e.name, (a = [])); a.push(i); });
+    const streets = [], pieces = [];
+    for (const [name, eis] of byName) {
+      const parent = new Map();
+      const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+      for (const ei of eis) for (const v of [E[ei].a, E[ei].b]) if (!parent.has(v)) parent.set(v, v);
+      for (const ei of eis) { const ra = find(E[ei].a), rb = find(E[ei].b); if (ra !== rb) parent.set(ra, rb); }
+      const groups = new Map(); let remain = 0, edge = false;
+      for (const ei of eis) {
+        remain += E[ei].len;
+        const r = find(E[ei].a); let g = groups.get(r); if (!g) groups.set(r, (g = [])); g.push(ei);
+        if (area) for (const v of [E[ei].a, E[ei].b]) if (hav(area.lat, area.lon, G.V[v][0], G.V[v][1]) > area.r - 150) edge = true;
+      }
+      const sid = streets.length, st = { name, remain, long: edge || remain > 0.6 * D, pieces: [] };
+      streets.push(st);
+      for (const g of groups.values()) {
+        const adj = new Map(); let len = 0, mx = 0;
+        for (const ei of g) {
+          edgeSid[ei] = sid; len += E[ei].len; mx = Math.max(mx, E[ei].g);
+          for (const v of [E[ei].a, E[ei].b]) { let a = adj.get(v); if (!a) adj.set(v, (a = [])); a.push(ei); }
+        }
+        const p = { id: pieces.length, sid, edges: g, adj, len, mx, nodes: [...adj.keys()] };
+        pieces.push(p); st.pieces.push(p.id);
+      }
+    }
+    return { streets, pieces, edgeSid };
+  }
+  /* Walk every segment of one piece from `entry`: depth-first, longest branch last so it
+     isn't doubled back; dead-end branches are run in and back out. */
+  function coverWalk(G, piece, entry) {
+    const E = G.E, adj = piece.adj, seenE = new Set(), seenV = new Set([entry]), kids = new Map(), extraAt = new Map();
+    const build = (v) => {
+      const ks = []; kids.set(v, ks);
+      for (const ei of adj.get(v) || []) {
+        if (seenE.has(ei)) continue; seenE.add(ei);
+        const w = E[ei].a === v ? E[ei].b : E[ei].a;
+        if (seenV.has(w)) { let a = extraAt.get(v); if (!a) extraAt.set(v, (a = [])); a.push(ei); continue; }
+        seenV.add(w); ks.push({ ei, w }); build(w);
+      }
+    };
+    build(entry);
+    const size = new Map();
+    const sz = (v) => { let s = 0; for (const k of kids.get(v)) s += E[k.ei].len + sz(k.w); size.set(v, s); return s; };
+    sz(entry);
+    const walk = [];
+    const emit = (v) => {
+      for (const ei of extraAt.get(v) || []) { const f = E[ei].a === v; walk.push({ e: ei, fwd: f, back: false }); walk.push({ e: ei, fwd: !f, back: true }); }
+      const ks = kids.get(v).slice().sort((a, b) => (E[a.ei].len + size.get(a.w)) - (E[b.ei].len + size.get(b.w)));
+      for (const k of ks) { const f = E[k.ei].a === v; walk.push({ e: k.ei, fwd: f, back: false }); emit(k.w); walk.push({ e: k.ei, fwd: !f, back: true }); }
+    };
+    emit(entry);
+    while (walk.length && walk[walk.length - 1].back) walk.pop();
+    let end = entry, len = 0;
+    for (const x of walk) { end = x.fwd ? E[x.e].b : E[x.e].a; len += E[x.e].len; }
+    return { walk, end, len };
+  }
+  function planStreets(G, srch, tree, homeT, P, s, D, tol, gmax, rnd) {
+    const E = G.E, hi = D + tol * 0.8, lo = D - tol * 0.5, steps = [], donePiece = new Set(), started = new Set();
+    let u = s, t = 0;
+    const penal = (ei) => { const sid = P.edgeSid[ei]; return sid >= 0 && !P.streets[sid].long && !started.has(sid); };
+    for (let iter = 0; iter < 40; iter++) {
+      const budget = hi - t; if (budget < 100) break;
+      tree.run(u, gmax, Math.min(budget, 2000), penal);
+      const opts = [];
+      for (const p of P.pieces) {
+        if (donePiece.has(p.id) || p.mx > gmax) continue;
+        const st = P.streets[p.sid];
+        let best = Infinity, bn = -1;
+        for (const v of p.nodes) { const d = tree.d(v); if (d < best) { best = d; bn = v; } }
+        if (bn < 0) continue;
+        if (!st.long && t + best + p.len + homeT.d(bn) > hi + 0.5 * p.len) continue;
+        let val = st.long ? 0.25 : 1;
+        if (started.has(p.sid)) val *= 6;          // finish what we started
+        if (st.pieces.length === 1) val *= 1.5;    // one piece finishes the whole street
+        opts.push({ p, bn, best, sc: val * (p.len + 80) / (best + 60) * (0.6 + 0.8 * rnd()) });
+      }
+      if (!opts.length) break;
+      opts.sort((a, b) => b.sc - a.sc);
+      let took = false;
+      for (const o of opts.slice(0, 6)) {
+        const cw = coverWalk(G, o.p, o.bn), st = P.streets[o.p.sid];
+        let walk = cw.walk, end = cw.end, len = cw.len;
+        if (t + o.best + len + homeT.d(end) > hi) {
+          if (!st.long) continue;
+          const cut = []; let tt = t + o.best, node = o.bn; // long street: run as much as fits
+          for (const x of walk) { const ed = E[x.e], nn = x.fwd ? ed.b : ed.a; if (tt + ed.len + homeT.d(nn) > hi) break; cut.push(x); tt += ed.len; node = nn; }
+          if (!cut.length) continue;
+          walk = cut; end = node; len = tt - t - o.best;
+        }
+        for (const x of tree.path(o.bn)) steps.push(x);
+        for (const x of walk) steps.push({ e: x.e, fwd: x.fwd, frac: 1 });
+        t += o.best + len; u = end; donePiece.add(o.p.id); started.add(o.p.sid); took = true; break;
+      }
+      if (!took || t + homeT.d(u) >= lo) break;
+    }
+    // pad to distance on streets that won't be left half-done, then head home
+    const allow = (ei) => { const sid = P.edgeSid[ei]; return sid < 0 || P.streets[sid].long || started.has(sid); };
+    let tail = srch.walk(s, D, tol, gmax, false, rnd, { u0: u, t0: t, allow, homeT });
+    if (!tail) tail = srch.walk(s, D, tol, gmax, false, rnd, { u0: u, t0: t, homeT });
+    return tail ? steps.concat(tail) : null;
+  }
+  function completionStats(G, steps, P) {
+    const cov = new Map(), seen = new Set();
+    for (const x of steps) {
+      if (seen.has(x.e)) continue; seen.add(x.e);
+      const sid = P.edgeSid[x.e]; if (sid < 0) continue;
+      cov.set(sid, (cov.get(sid) || 0) + G.E[x.e].len);
+    }
+    let done = 0, partial = 0, longLen = 0; const doneNames = [], partialNames = [];
+    for (const [sid, c] of cov) {
+      const st = P.streets[sid];
+      if (c >= st.remain - 1) { done++; doneNames.push(st.name); }
+      else if (st.long) longLen += c;
+      else { partial++; partialNames.push(st.name); }
+    }
+    return { done, partial, longLen, doneNames, partialNames };
+  }
+
+  function loopStats(steps, G) {
+    let len = 0, up = 0, mx = 0, rep = 0, newLen = 0;
+    const seen = new Set(), names = new Set(), newNames = new Set();
+    for (const s of steps) {
+      const e = G.E[s.e];
+      len += e.len; up += s.fwd ? e.up : e.dn; if (e.g > mx) mx = e.g;
+      if (seen.has(s.e)) rep += e.len;
+      else { seen.add(s.e); if (!e.run) { newLen += e.len; if (e.name) newNames.add(e.name); } }
+      if (e.name) names.add(e.name);
+    }
+    return { steps, type: 'loop', len, climb: up, mx, repeat: rep / Math.max(1, len), streets: names.size,
+      newStreets: newNames.size, newLen, edges: seen };
+  }
+  function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  /* ---------- route assembly ---------- */
+  function stepStats(G, steps) {
+    let len = 0, up = 0, dn = 0, mx = 0;
+    for (const s of steps) {
+      const e = G.E[s.e];
+      len += e.len * s.frac; up += (s.fwd ? e.up : e.dn) * s.frac; dn += (s.fwd ? e.dn : e.up) * s.frac;
+      if (e.g > mx) mx = e.g;
+    }
+    return { len, up, dn, mx };
+  }
+  function cutPolyline(pts, upto) {
+    const out = [pts[0]]; let acc = 0;
+    for (let j = 1; j < pts.length; j++) {
+      const p = pts[j - 1], q = pts[j], seg = hav(p[0], p[1], q[0], q[1]);
+      if (acc + seg >= upto) { const f = (upto - acc) / seg; out.push([p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]); return out; }
+      out.push(q); acc += seg;
+    }
+    return out;
+  }
+  function stepGeom(G, steps) {
+    const segs = [], prof = { d: [], z: [] }; let off = 0;
+    for (const s of steps) {
+      const e = G.E[s.e];
+      let pts = s.fwd ? e.pts : e.pts.slice().reverse();
+      let d = e.d, z = e.z;
+      if (!s.fwd) { d = d.map((x) => e.len - x).reverse(); z = z.slice().reverse(); }
+      const lim = e.len * s.frac;
+      if (s.frac < 1) pts = cutPolyline(pts, lim);
+      for (let i = 0; i < d.length; i++) {
+        if (d[i] > lim + 0.01) break;
+        if (prof.d.length && i === 0) continue;
+        prof.d.push(off + d[i]); prof.z.push(z[i]);
+      }
+      segs.push({ pts, g: e.g, run: !!e.run, name: e.name });
+      off += lim;
+    }
+    return { segs, prof };
+  }
+  function makeRoute(G, steps, type) {
+    const st = stepStats(G, steps), gm = stepGeom(G, steps);
+    let segs = gm.segs, prof = gm.prof, len = st.len, climb = st.up;
+    if (type === 'ob') {
+      const back = segs.slice().reverse().map((s) => ({ pts: s.pts.slice().reverse(), g: s.g, run: s.run, name: s.name }));
+      segs = segs.concat(back);
+      const L = st.len, n = prof.d.length;
+      for (let i = n - 2; i >= 0; i--) { prof.d.push(2 * L - prof.d[i]); prof.z.push(prof.z[i]); }
+      len = 2 * L; climb = st.up + st.dn;
+    }
+    const sc = smoothClimb(prof.d, prof.z);
+    climb = sc.up; prof.z = sc.zs;
+    const start = G.V[G.E[steps[0].e][steps[0].fwd ? 'a' : 'b']];
+    const coords = [];
+    for (const s of segs) for (const p of s.pts) {
+      const l = coords[coords.length - 1];
+      if (!l || l[0] !== p[0] || l[1] !== p[1]) coords.push(p);
+    }
+    return { type, len, climb, mx: st.mx, segs, prof, coords, start, edges: new Set(steps.map((s) => s.e)) };
+  }
+
+  /* ---------- starts, ranking ---------- */
+  function pickStarts(G, srch, lat, lon, R, N) {
+    const cand = [];
+    G.V.forEach((p, i) => {
+      if (G.adj[i].length < 2) return;
+      if (hav(lat, lon, p[0], p[1]) > R) return;
+      let mx = 0; for (const e of G.adj[i]) mx = Math.max(mx, G.E[e].g);
+      cand.push({ i, p, mx });
+    });
+    if (!cand.length) { const n = srch.nearest(lat, lon, 8); return n >= 0 ? [n] : []; }
+    const cells = Math.max(1, Math.ceil(Math.sqrt(N))), size = (2 * R) / cells;
+    const k = Math.cos(lat * D2R), bins = new Map();
+    for (const c of cand) {
+      const x = Math.floor(((c.p[1] - lon) * D2R * RE * k + R) / size), y = Math.floor(((c.p[0] - lat) * D2R * RE + R) / size);
+      const key = x + ',' + y, b = bins.get(key);
+      if (!b || c.mx < b.mx) bins.set(key, c);
+    }
+    const picks = [...bins.values()].sort((a, b) => a.mx - b.mx).slice(0, N).map((c) => c.i);
+    const near = srch.nearest(lat, lon, 8);
+    if (near >= 0 && !picks.includes(near)) picks.push(near);
+    return picks;
+  }
+  function overlap(a, b) {
+    let n = 0; const [s, l] = a.edges.size < b.edges.size ? [a.edges, b.edges] : [b.edges, a.edges];
+    for (const e of s) if (l.has(e)) n++;
+    return n / Math.max(1, s.size);
+  }
+  function rank(cands, mode, D, tol, k = 3, streets = false, hist = false) {
+    const within = cands.filter((c) => Math.abs(c.len - D) <= tol);
+    const pool = (within.length ? within : cands.slice().sort((a, b) => Math.abs(a.len - D) - Math.abs(b.len - D)).slice(0, 12)).slice();
+    const key = (c) => streets ? [-(c.done - 0.8 * c.partial + c.longLen / 3200 - 40 * c.mx - c.climb * 0.022), c.repeat]
+      : mode === 'grade' ? [Math.round(c.mx * 400), c.climb + 60 * (c.repeat || 0)] : [Math.round(c.climb / 3), c.mx + (c.repeat || 0)];
+    pool.sort((a, b) => { const x = key(a), y = key(b); return x[0] - y[0] || x[1] - y[1]; });
+    const out = [];
+    for (const c of pool) {
+      if (out.every((o) => overlap(c, o) < 0.5)) { c.offTarget = !within.length; out.push(c); }
+      if (out.length === k) break;
+    }
+    return out;
+  }
+
+  const LEVELS = [0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.15, 1];
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  /* opts: {lat, lon, R, D, tol (m), type 'ob'|'loop', mode 'grade'|'climb'} */
+  async function findRoutes(G, opts, onProgress = () => {}) {
+    const srch = new Searcher(G);
+    const { lat, lon, R, D, tol, type, mode } = opts, streets = !!opts.streets && type === 'loop';
+    const starts = pickStarts(G, srch, lat, lon, R, type === 'ob' ? 60 : streets ? 12 : 18);
+    const P = streets ? buildPieces(G, D, opts.area) : null, tree = streets ? new Tree(G) : null, homeT = streets ? new Tree(G) : null;
+    const homePenal = (ei) => { const sid = P.edgeSid[ei]; return sid >= 0 && !P.streets[sid].long; };
+    if (!starts.length) throw new Error('No streets found inside the circle. Move the pin or make the radius bigger.');
+    const cands = [];
+    let t0 = Date.now();
+    for (let i = 0; i < starts.length; i++) {
+      const s = starts[i];
+      if (type === 'ob') {
+        let lastKey = '';
+        for (const g of LEVELS) {
+          const steps = srch.outBack(s, D / 2, g, mode);
+          if (!steps) continue;
+          const key = steps.map((x) => x.e).join(',');
+          if (key === lastKey) continue; lastKey = key;
+          cands.push(makeRoute(G, steps, 'ob'));
+        }
+      } else {
+        const rnd = rng(s * 2654435761 + 7);
+        let found = false, extra = 1;
+        for (const g of LEVELS) {
+          srch.homeTree(s, g, D / 2 + tol);
+          if (streets) homeT.run(s, g, D / 2 + tol, homePenal); // way home prefers streets that are already done
+          let ok = 0;
+          for (let k = 0; k < (streets ? 20 : 30); k++) {
+            const steps = streets ? planStreets(G, srch, tree, homeT, P, s, D, tol, g, rnd) : srch.walk(s, D, tol, g, false, rnd);
+            if (!steps || steps.length < 3) continue;
+            const c = loopStats(steps, G);
+            if (Math.abs(c.len - D) > tol || c.repeat > (streets ? 0.6 : 0.4)) continue;
+            if (streets) Object.assign(c, completionStats(G, steps, P));
+            cands.push(c); ok++;
+          }
+          if (ok) found = true;
+          if (found && extra-- <= 0) break;
+        }
+      }
+      if (Date.now() - t0 > 40) { onProgress((i + 1) / starts.length); await tick(); t0 = Date.now(); }
+    }
+    onProgress(1);
+    const top = rank(cands, mode, D, tol, 10, streets, !!opts.hist).map((c) => c.segs ? c
+      : Object.assign(makeRoute(G, c.steps, 'loop'), { streets: c.streets, repeat: c.repeat, newStreets: c.newStreets, newLen: c.newLen,
+        done: c.done, partial: c.partial, longLen: c.longLen, doneNames: c.doneNames, partialNames: c.partialNames }));
+    return rank(top, mode, D, tol, 3, streets, !!opts.hist);
+  }
+
+  root.FlatCore = { hav, dest, buildGraph, markRun, smoothClimb, setClimb, computeProfiles, findRoutes, Searcher, makeRoute };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+(() => {
+'use strict';
+const C = window.FlatCore, MI = 1609.344, FT = 3.28084;
+const $ = (id) => document.getElementById(id);
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('flatroute.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('flatroute.' + k, JSON.stringify(v)); } catch {} }
+};
+
+/* ---------- state ---------- */
+const S = {
+  pin: store.get('pin', null), radius: store.get('radius', 1), dist: store.get('dist', 5),
+  type: store.get('type', 'ob'), mode: store.get('mode', 'grade'), tol: store.get('tol', 0.25),
+  paths: store.get('paths', false), streets: store.get('streets', false), routes: [], sel: 0, busy: false
+};
+
+/* ---------- map ---------- */
+const dark = matchMedia('(prefers-color-scheme: dark)').matches && document.documentElement.dataset.theme !== 'light';
+const map = L.map('map', { zoomControl: false, attributionControl: true }).setView(S.pin || [33.1984, -96.6389], S.pin ? 14 : 12);
+// Basemap: Esri World Street Map (no key). Falls back to OpenStreetMap if Esri tiles fail.
+const BASEMAPS = [
+  { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', opt: { maxZoom: 19, maxNativeZoom: 19, attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors' } },
+  { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', opt: { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' } }
+];
+let baseIdx = 0, baseErrs = 0, baseLayer = null;
+function setBase(i) {
+  if (baseLayer) map.removeLayer(baseLayer);
+  baseIdx = i; baseErrs = 0;
+  baseLayer = L.tileLayer(BASEMAPS[i].url, BASEMAPS[i].opt).addTo(map);
+  baseLayer.on('tileerror', () => { if (++baseErrs > 4 && baseIdx < BASEMAPS.length - 1) setBase(baseIdx + 1); });
+}
+setBase(0);
+const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [22, 22], iconAnchor: [11, 11] });
+let pinMarker = null, circle = null, routeLayer = L.layerGroup().addTo(map);
+
+function drawPin() {
+  if (!S.pin) return;
+  if (!pinMarker) {
+    pinMarker = L.marker(S.pin, { icon: pinIcon, draggable: true }).addTo(map);
+    pinMarker.on('dragend', () => { const p = pinMarker.getLatLng(); setPin([p.lat, p.lng]); });
+    circle = L.circle(S.pin, { radius: S.radius * MI, color: css('--accent'), weight: 2, fillOpacity: 0.08, dashArray: '6 6', interactive: false }).addTo(map);
+  }
+  pinMarker.setLatLng(S.pin); circle.setLatLng(S.pin); circle.setRadius(S.radius * MI);
+  $('pinlabel').textContent = S.pin[0].toFixed(4) + ', ' + S.pin[1].toFixed(4);
+  $('hint').hidden = true;
+  $('go').disabled = S.busy; $('go').textContent = S.busy ? 'Searching…' : 'Find flat routes';
+}
+function setPin(p) { S.pin = p; store.set('pin', p); drawPin(); clearRoutes(); }
+map.on('click', (e) => { if (!S.busy) setPin([e.latlng.lat, e.latlng.lng]); });
+$('locate').onclick = () => {
+  if (!navigator.geolocation) return status('This browser can’t share your location. Tap the map instead.', true);
+  navigator.geolocation.getCurrentPosition(
+    (p) => { setPin([p.coords.latitude, p.coords.longitude]); map.setView(S.pin, 14); },
+    () => status('Location is blocked. Allow it in your browser settings, or tap the map.', true),
+    { enableHighAccuracy: true, timeout: 10000 });
+};
+
+/* ---------- controls ---------- */
+function segInit(id, key, parse = (v) => v) {
+  const el = $(id);
+  const paint = () => el.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(parse(b.dataset.v) === S[key])));
+  el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S[key] = parse(b.dataset.v); store.set(key, S[key]); paint(); syncStreets(); });
+  paint();
+}
+function syncStreets() { $('streetsRow').hidden = S.type !== 'loop'; }
+segInit('type', 'type'); segInit('mode', 'mode'); segInit('tol', 'tol', Number);
+const rad = $('radius'), dist = $('dist');
+rad.value = S.radius; dist.value = S.dist; $('paths').checked = S.paths;
+const showRad = () => { $('radiusOut').textContent = S.radius.toFixed(2).replace(/0$/, '') + ' mi'; };
+rad.oninput = () => { S.radius = +rad.value; store.set('radius', S.radius); showRad(); if (circle) circle.setRadius(S.radius * MI); };
+showRad();
+dist.onchange = () => { let v = Math.min(26.2, Math.max(0.5, +dist.value || 5)); S.dist = Math.round(v * 10) / 10; dist.value = S.dist; store.set('dist', S.dist); };
+document.querySelectorAll('[data-step]').forEach((b) => b.onclick = () => { dist.value = (+dist.value || 5) + +b.dataset.step; dist.onchange(); });
+$('paths').onchange = (e) => { S.paths = e.target.checked; store.set('paths', S.paths); };
+$('streets').checked = S.streets; syncStreets();
+$('streets').onchange = (e) => { S.streets = e.target.checked; store.set('streets', S.streets); };
+$('grab').onclick = () => $('sheet').classList.toggle('min');
+
+function status(text, err = false, pct = null) {
+  $('status').hidden = !text; $('status').classList.toggle('err', err);
+  $('statusText').textContent = text || '';
+  $('bar').parentElement.hidden = pct == null;
+  if (pct != null) $('bar').style.width = Math.round(pct * 100) + '%';
+}
+
+/* ---------- run history (cells ~17 m a run passed through) ---------- */
+let H = null; // {dLat, dLon, set:Set<number>, activities, files:[]}
+const keyOf = (y, x) => (y + 700000) * 2100000 + (x + 1100000);
+function decodeHist(j) {
+  const set = new Set();
+  for (const [y, ds] of j.rows) { let x = 0; for (const d of ds) { x += d; set.add(keyOf(y, x)); } }
+  return { dLat: j.dLat, dLon: j.dLon, set, activities: j.activities || 0, files: j.files || [], lastActivityId: j.lastActivityId || null };
+}
+function encodeHist(h) {
+  const rows = new Map();
+  for (const k of h.set) { const y = Math.floor(k / 2100000) - 700000, x = (k % 2100000) - 1100000; let a = rows.get(y); if (!a) rows.set(y, (a = [])); a.push(x); }
+  const out = [];
+  for (const y of [...rows.keys()].sort((a, b) => a - b)) { const xs = rows.get(y).sort((a, b) => a - b); let p = 0; out.push([y, xs.map((x) => { const d = x - p; p = x; return d; })]); }
+  return { v: 1, dLat: h.dLat, dLon: h.dLon, activities: h.activities, lastActivityId: h.lastActivityId, files: h.files, rows: out };
+}
+function histHas(lat, lon) {
+  const y = Math.floor(lat / H.dLat), x = Math.floor(lon / H.dLon);
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) if (H.set.has(keyOf(y + i, x + j))) return true;
+  return false;
+}
+function saveHist() {
+  try { localStorage.setItem('flatroute.hist', JSON.stringify(encodeHist(H))); return true; }
+  catch { status('Your run history is loaded for now, but this browser wouldn’t save it. Load the file again next time.', true); return false; }
+}
+function showHist() {
+  $('histOut').textContent = H ? H.activities.toLocaleString() + ' runs' : 'None loaded';
+  $('histClear').hidden = !H;
+}
+try { const raw = localStorage.getItem('flatroute.hist'); if (raw) H = decodeHist(JSON.parse(raw)); } catch { H = null; }
+showHist();
+$('histFile').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    if (!j.rows || !j.dLat) throw new Error();
+    H = decodeHist(j); saveHist(); showHist(); clearRoutes();
+    status('Loaded ' + H.activities.toLocaleString() + ' runs. “Finish streets” now plans around streets you haven’t finished.');
+  } catch { status('That file isn’t a FlatRoute history file. Use my-runs.json.', true); }
+};
+function trackPoints(text, name) {
+  const pts = [];
+  if (/\.tcx$/i.test(name)) {
+    const re = /<LatitudeDegrees>([-\d.]+)<\/LatitudeDegrees>\s*<LongitudeDegrees>([-\d.]+)<\/LongitudeDegrees>/g; let m;
+    while ((m = re.exec(text))) pts.push([+m[1], +m[2]]);
+  } else {
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    for (const p of doc.getElementsByTagName('trkpt')) pts.push([+p.getAttribute('lat'), +p.getAttribute('lon')]);
+  }
+  return pts.filter((p) => isFinite(p[0]) && isFinite(p[1]) && (Math.abs(p[0]) > 0.01 || Math.abs(p[1]) > 0.01));
+}
+$('gpxFile').onchange = async (e) => {
+  const files = [...e.target.files]; e.target.value = ''; if (!files.length) return;
+  if (!H) H = { dLat: 0.00015, dLon: 0.00018, set: new Set(), activities: 0, files: [], lastActivityId: null };
+  let added = 0, dup = 0, bad = 0;
+  for (const f of files) {
+    const id = f.name + ':' + f.size;
+    if (H.files.includes(id)) { dup++; continue; }
+    const pts = trackPoints(await f.text(), f.name);
+    if (pts.length < 2) { bad++; continue; }
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], d = C.hav(a[0], a[1], b[0], b[1]);
+      if (d > 300) continue;
+      const n = Math.max(1, Math.floor(d / 8));
+      for (let k = 0; k <= n; k++) { const t = k / n; H.set.add(keyOf(Math.floor((a[0] + (b[0] - a[0]) * t) / H.dLat), Math.floor((a[1] + (b[1] - a[1]) * t) / H.dLon))); }
+    }
+    H.files.push(id); H.activities++; added++;
+  }
+  saveHist(); showHist(); clearRoutes();
+  status(`Added ${added} run${added === 1 ? '' : 's'}.` + (dup ? ` Skipped ${dup} already added.` : '') + (bad ? ` ${bad} file${bad === 1 ? ' had' : 's had'} no GPS track.` : ''), !added && bad > 0);
+};
+/* Compare FlatRoute's elevation estimate with the watch's recorded track for one GPX run. */
+$('checkFile').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const doc = new DOMParser().parseFromString(await f.text(), 'application/xml');
+    const tp = [...doc.getElementsByTagName('trkpt')].map((p) => {
+      const el = p.getElementsByTagName('ele')[0];
+      return [+p.getAttribute('lat'), +p.getAttribute('lon'), el ? +el.textContent : NaN];
+    }).filter((p) => isFinite(p[0]) && isFinite(p[1]));
+    if (tp.length < 10) throw new Error('That file has no GPS track.');
+    status('Loading elevation for that run…', false, 0.2);
+    const elev = await loadElevationFor(tp, (p) => status('Loading elevation for that run…', false, 0.2 + 0.7 * p));
+    // resample every 20 m like the route engine does
+    const d = [0], zDem = [elev(tp[0][0], tp[0][1])], dw = [0], zw = [tp[0][2]];
+    let acc = 0, next = 20;
+    for (let i = 1; i < tp.length; i++) {
+      const a = tp[i - 1], b = tp[i], seg = C.hav(a[0], a[1], b[0], b[1]);
+      if (seg > 300) { acc += seg; next = acc + 20; continue; }
+      while (next <= acc + seg) { const t = (next - acc) / seg; d.push(next); zDem.push(elev(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)); next += 20; }
+      acc += seg;
+      if (isFinite(b[2])) { dw.push(acc); zw.push(b[2]); }
+    }
+    const fr = C.smoothClimb(d, zDem).up * FT;
+    const hasEle = zw.filter(isFinite).length > 10;
+    const watch = hasEle ? C.smoothClimb(dw, zw, 15, 1).up * FT : null;
+    status(`${f.name}: ${(acc / MI).toFixed(2)} mi. FlatRoute estimate ${Math.round(fr)} ft climb` + (watch != null ? `, your watch's track ${Math.round(watch)} ft.` : '. The file has no watch elevation to compare.'));
+  } catch (err) { status(err.message || 'Couldn’t read that GPX file.', true); }
+};
+/* ---------- calibrate climb against the watch on real runs ---------- */
+const SIGMAS = [10, 15, 20, 30, 40, 60, 80, 120], HYSTS = [0, 0.5, 1, 1.5, 2, 3, 4, 5], ZOOMS = [14, 15];
+let lastCalib = null;
+$('calibFile').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f || S.busy) return;
+  let data;
+  try { data = JSON.parse(await f.text()); if (!data.runs || !data.runs.length) throw 0; }
+  catch { return status('That isn’t a FlatRoute calibration file. Use calibration.json.', true); }
+  S.busy = true; drawPin(); clearRoutes();
+  try {
+    const runs = data.runs.map((r) => {
+      const d = [0];
+      for (let i = 1; i < r.pts.length; i++) { const a = r.pts[i - 1], b = r.pts[i], s = C.hav(a[0], a[1], b[0], b[1]); d.push(d[i - 1] + (s > 300 ? 0 : s)); }
+      return Object.assign({}, r, { d, dem: {} });
+    }).sort((a, b) => a.pts[0][0] - b.pts[0][0] || a.pts[0][1] - b.pts[0][1]); // neighbors share tiles
+    let step = 0; const total = runs.length * ZOOMS.length;
+    for (const z of ZOOMS) for (const r of runs) {
+      status(`Calibrating: elevation for run ${(step % runs.length) + 1} of ${runs.length} (zoom ${z})…`, false, step / total);
+      const elev = await loadElevationFor(r.pts, () => {}, z, 400);
+      r.dem[z] = r.pts.map((p) => elev(p[0], p[1]));
+      step++;
+    }
+    status('Calibrating: comparing settings…', false, 1);
+    await new Promise((res) => setTimeout(res, 0));
+    const truth = (r) => r.watchGainM * FT;
+    const est = (r, z, sg, h) => C.smoothClimb(r.d, r.dem[z], sg, h).up * FT;
+    const coros = runs.filter((r) => /coros/i.test(r.device || ''));
+    const fitSet = coros.length >= 15 ? coros : runs;
+    const score = (set, z, sg, h) => {
+      let ae = 0, bias = 0, perMile = [];
+      for (const r of set) { const err = est(r, z, sg, h) - truth(r); ae += Math.abs(err); bias += err; perMile.push(Math.abs(err) / (r.distM / MI)); }
+      perMile.sort((x, y) => x - y);
+      return { mae: ae / set.length, bias: bias / set.length, ftPerMile: perMile[Math.floor(perMile.length * 0.8)] };
+    };
+    const combos = [];
+    for (const z of ZOOMS) for (const sg of SIGMAS) for (const h of HYSTS) combos.push(Object.assign({ zoom: z, sigma: sg, hyst: h }, score(fitSet, z, sg, h)));
+    combos.sort((x, y) => x.mae - y.mae);
+    const best = combos[0], cur = Object.assign({ zoom: CAL.zoom, sigma: CAL.sigma, hyst: CAL.hyst }, score(fitSet, CAL.zoom, CAL.sigma, CAL.hyst));
+    const raw = score(fitSet, 14, 1, 0); // close to the original, unfiltered method
+    const devices = {};
+    for (const r of runs) { const k = r.device || 'other'; (devices[k] = devices[k] || []).push(r); }
+    const perDev = Object.entries(devices).map(([k, set]) => [k, set.length, score(set, best.zoom, best.sigma, best.hyst).mae]);
+    lastCalib = { best, cur, raw, perDev, fitName: fitSet === coros ? 'COROS' : 'all', n: fitSet.length,
+      rows: runs.map((r) => ({ date: r.date, name: r.name, mi: r.distM / MI, device: r.device, watch: truth(r), fr: est(r, best.zoom, best.sigma, best.hyst) })).sort((x, y) => y.date.localeCompare(x.date)) };
+    renderCalib();
+    status('');
+  } catch (err) { status(err.message || 'Calibration failed.', true); }
+  finally { S.busy = false; drawPin(); }
+};
+function calibText() {
+  const c = lastCalib, f = (x) => Math.round(x);
+  return [`FlatRoute climb calibration (${c.n} ${c.fitName} runs)`,
+    `best: zoom ${c.best.zoom}, smoothing ${c.best.sigma} m, threshold ${c.best.hyst} m -> avg error ${f(c.best.mae)} ft, bias ${f(c.best.bias)} ft, 80% within ${c.best.ftPerMile.toFixed(1)} ft/mi`,
+    `current: zoom ${c.cur.zoom}, ${c.cur.sigma} m, ${c.cur.hyst} m -> avg error ${f(c.cur.mae)} ft, bias ${f(c.cur.bias)} ft`,
+    `unfiltered: avg error ${f(c.raw.mae)} ft, bias ${f(c.raw.bias)} ft`,
+    'by device: ' + c.perDev.map(([k, n, m]) => `${k} ${n} runs ${f(m)} ft`).join('; '),
+    'date,miles,device,watch_ft,flatroute_ft',
+    ...c.rows.map((r) => `${r.date},${r.mi.toFixed(2)},${r.device},${f(r.watch)},${f(r.fr)}`)].join('\n');
+}
+function renderCalib() {
+  const c = lastCalib, f = (x) => Math.round(x), sg = (x) => (x > 0 ? '+' : '') + f(x);
+  const box = $('results');
+  box.innerHTML = `<section class="calib">
+    <h2>Climb vs. your watch</h2>
+    <div class="pair">
+      <div class="stat"><b class="big">${f(c.best.mae)} ft</b><span>avg error, best settings</span></div>
+      <div class="stat"><b class="big">${f(c.cur.mae)} ft</b><span>avg error, current</span></div>
+      <div class="stat"><b class="big">${f(c.raw.mae)} ft</b><span>avg error, unfiltered</span></div>
+    </div>
+    <div class="note">Fit on ${c.n} ${c.fitName} runs. Best: elevation zoom ${c.best.zoom}, smoothing ${c.best.sigma} m, ignore changes under ${c.best.hyst} m. FlatRoute runs ${sg(c.best.bias)} ft vs. the watch on average; 80% of runs land within ${c.best.ftPerMile.toFixed(1)} ft per mile.</div>
+    <div class="note">By device: ${c.perDev.map(([k, n, m]) => `${k} (${n} runs) ${f(m)} ft`).join(' · ')}</div>
+    <div class="acts"><button class="primary" type="button" id="calUse">Use best settings</button><button type="button" id="calCopy">Copy results</button></div>
+    <div class="tbl"><table><thead><tr><th>Run</th><th>Mi</th><th>Watch</th><th>FlatRoute</th><th>Diff</th></tr></thead><tbody>
+      ${c.rows.map((r) => `<tr><td>${r.date}</td><td>${r.mi.toFixed(1)}</td><td>${f(r.watch)}</td><td>${f(r.fr)}</td><td>${sg(r.fr - r.watch)}</td></tr>`).join('')}
+    </tbody></table></div>
+  </section>`;
+  $('calUse').onclick = () => {
+    CAL = { sigma: c.best.sigma, hyst: c.best.hyst, zoom: c.best.zoom, ftPerMile: c.best.ftPerMile, runs: c.n, mae: c.best.mae };
+    store.set('calib', CAL); C.setClimb(CAL.sigma, CAL.hyst); cache = null;
+    $('calUse').textContent = 'Saved'; status('Saved. New searches use the calibrated climb, and each route shows its likely error.');
+  };
+  $('calCopy').onclick = async () => {
+    const t = calibText();
+    try { await navigator.clipboard.writeText(t); $('calCopy').textContent = 'Copied'; }
+    catch { const ta = document.createElement('textarea'); ta.value = t; ta.style.height = '120px'; box.appendChild(ta); ta.select(); $('calCopy').textContent = 'Select and copy the text below'; }
+  };
+}
+$('histClear').onclick = () => {
+  if ($('histClear').dataset.armed !== '1') { $('histClear').dataset.armed = '1'; $('histClear').textContent = 'Tap to confirm'; setTimeout(() => { $('histClear').dataset.armed = ''; $('histClear').textContent = 'Clear'; }, 3000); return; }
+  H = null; try { localStorage.removeItem('flatroute.hist'); } catch {}
+  $('histClear').dataset.armed = ''; $('histClear').textContent = 'Clear'; showHist(); clearRoutes(); status('Run history cleared.');
+};
+
+/* ---------- data: streets ---------- */
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
+let cache = null; // {lat, lon, r, paths, G}
+function overpassQuery(lat, lon, r, paths) {
+  const a = `(around:${Math.round(r)},${lat.toFixed(6)},${lon.toFixed(6)})`;
+  const f = `["access"!~"^(private|no)$"]["foot"!~"^(no|private)$"]["area"!="yes"]`;
+  return `[out:json][timeout:120];(
+way${a}["highway"~"^(residential|living_street|unclassified|tertiary|tertiary_link|secondary|secondary_link|primary|primary_link|road)$"]${f};
+way${a}["highway"="service"][!"service"]${f};
+${paths ? `way${a}["highway"~"^(footway|path|cycleway|pedestrian|track|bridleway)$"]${f};` : ''}
+);out body;>;out skel qt;`;
+}
+async function fetchStreets(lat, lon, r, paths) {
+  let lastErr;
+  for (const url of OVERPASS) {
+    try {
+      const res = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(overpassQuery(lat, lon, r, paths)), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (res.status === 429 || res.status >= 500) throw new Error('busy (' + res.status + ')');
+      if (!res.ok) throw new Error('error ' + res.status);
+      return await res.json();
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error('The street map server is ' + (lastErr ? lastErr.message : 'unreachable') + '. Wait a minute and try again.');
+}
+
+/* ---------- climb calibration settings ---------- */
+// Calibrated 2026-10-17 on 22 of Paul's COROS runs: avg error 9 ft, 80% within 3.3 ft/mi
+const CALIB_DEFAULT = { sigma: 40, hyst: 1.5, zoom: 15, ftPerMile: 3.3, runs: 22, mae: 9 };
+let CAL = Object.assign({}, CALIB_DEFAULT, store.get('calib', {}));
+function calib() { return CAL; }
+C.setClimb(CAL.sigma, CAL.hyst);
+function climbBand(r) { return CAL.ftPerMile == null ? null : Math.max(5, Math.round(CAL.ftPerMile * r.len / MI)); }
+
+/* ---------- data: elevation (AWS Terrain Tiles, terrarium encoding) ---------- */
+const tiles = new Map(); // key z/x/y -> Float32Array of meters (LRU, newest last)
+const TILE_CAP = 260;
+function keepTile(key, arr) {
+  tiles.delete(key); tiles.set(key, arr);
+  while (tiles.size > TILE_CAP) tiles.delete(tiles.keys().next().value);
+}
+function lonX(lon, z) { return (lon + 180) / 360 * 256 * 2 ** z; }
+function latY(lat, z) { const s = Math.sin(lat * Math.PI / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * 2 ** z; }
+function loadTile(z, x, y) {
+  const key = z + '/' + x + '/' + y;
+  if (tiles.has(key)) { keepTile(key, tiles.get(key)); return Promise.resolve(); }
+  return new Promise((ok, bad) => {
+    let tries = 0;
+    const go = () => {
+      const img = new Image(); img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const c = document.createElement('canvas'); c.width = c.height = 256;
+        const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
+        const px = g.getImageData(0, 0, 256, 256).data, m = new Float32Array(65536);
+        for (let i = 0, o = 0; i < 65536; i++, o += 4) m[i] = px[o] * 256 + px[o + 1] + px[o + 2] / 256 - 32768;
+        keepTile(key, m); ok();
+      };
+      img.onerror = () => (++tries < 3 ? setTimeout(go, 400 * tries) : bad(new Error('Elevation data didn’t load. Check your connection and try again.')));
+      img.src = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${key}.png`;
+    };
+    go();
+  });
+}
+async function loadElevation(G, onPct) {
+  const pts = [];
+  for (const p of G.V) pts.push(p);
+  for (const ed of G.E) for (const p of ed.pts) pts.push(p);
+  return loadElevationFor(pts, onPct);
+}
+async function loadElevationFor(pts, onPct = () => {}, zStart = calib().zoom, cap = 160) {
+  let s = 90, n = -90, e = 180, ee = -180;
+  for (const p of pts) { s = Math.min(s, p[0]); n = Math.max(n, p[0]); e = Math.min(e, p[1]); ee = Math.max(ee, p[1]); }
+  let z = zStart, list;
+  for (;;) {
+    const x0 = Math.floor(lonX(e, z) / 256), x1 = Math.floor(lonX(ee, z) / 256), y0 = Math.floor(latY(n, z) / 256), y1 = Math.floor(latY(s, z) / 256);
+    list = []; for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) list.push([x, y]);
+    if (list.length <= cap || z === 11) break;
+    z--;
+  }
+  let done = 0, i = 0;
+  const own = new Map(); // this lookup keeps its own tiles, so cache eviction can't break it
+  const worker = async () => { while (i < list.length) { const [x, y] = list[i++]; await loadTile(z, x, y); const k = z + '/' + x + '/' + y; own.set(k, tiles.get(k)); onPct(++done / list.length); } };
+  await Promise.all(Array.from({ length: 8 }, worker));
+  const max = 256 * 2 ** z;
+  const px = (X, Y) => {
+    X = Math.min(max - 1, Math.max(0, X)); Y = Math.min(max - 1, Math.max(0, Y));
+    const d = own.get(z + '/' + (X >> 8) + '/' + (Y >> 8)); if (!d) return NaN;
+    return d[((Y & 255) << 8) + (X & 255)];
+  };
+  return (lat, lon) => {
+    const X = lonX(lon, z) - 0.5, Y = latY(lat, z) - 0.5, x = Math.floor(X), y = Math.floor(Y), fx = X - x, fy = Y - y;
+    const v = px(x, y) * (1 - fx) * (1 - fy) + px(x + 1, y) * fx * (1 - fy) + px(x, y + 1) * (1 - fx) * fy + px(x + 1, y + 1) * fx * fy;
+    return isFinite(v) ? v : 0;
+  };
+}
+
+/* ---------- search ---------- */
+async function getGraph(lat, lon, r) {
+  if (cache && cache.paths === S.paths && cache.zoom === CAL.zoom && C.hav(lat, lon, cache.lat, cache.lon) + r <= cache.r) return cache;
+  const rr = r * 1.15; // fetch a little extra so small changes reuse it
+  status('Loading streets…', false, 0.05);
+  const osm = await fetchStreets(lat, lon, rr, S.paths);
+  status('Building street network…', false, 0.15);
+  await new Promise((r) => setTimeout(r, 0));
+  const G = C.buildGraph(osm);
+  if (!G.E.length) throw new Error('No runnable streets found here. Try another spot.');
+  status('Loading elevation…', false, 0.2);
+  const elev = await loadElevation(G, (p) => status('Loading elevation…', false, 0.2 + 0.3 * p));
+  status('Measuring grades…', false, 0.5);
+  await new Promise((r) => setTimeout(r, 0));
+  C.computeProfiles(G, elev);
+  cache = { lat, lon, r: rr, paths: S.paths, zoom: CAL.zoom, G, elev };
+  return cache;
+}
+$('go').onclick = async () => {
+  if (!S.pin || S.busy) return;
+  dist.onchange();
+  S.busy = true; drawPin(); clearRoutes();
+  try {
+    const D = S.dist * MI, R = S.radius * MI;
+    const reach = R + D / 2 + 300;
+    if (reach > 22000) throw new Error('That search area is very large. Use a smaller radius or a shorter distance.');
+    const area = await getGraph(S.pin[0], S.pin[1], reach), G = area.G;
+    C.markRun(G, H ? histHas : null);
+    status('Searching routes…', false, 0.55);
+    const routes = await C.findRoutes(G, { lat: S.pin[0], lon: S.pin[1], R, D, tol: S.tol * MI, type: S.type, mode: S.mode, streets: S.streets, hist: !!H, area: { lat: area.lat, lon: area.lon, r: area.r } },
+      (p) => status('Searching routes…', false, 0.55 + 0.45 * p));
+    if (!routes.length) throw new Error('No routes of that length found. Try a shorter distance or turn on trails.');
+    routes.forEach((r) => { r.name = startName(G, r); });
+    S.routes = routes; S.sel = 0; status('');
+    renderResults(); drawRoutes(true);
+  } catch (e) {
+    status(e.message || String(e), true);
+  } finally { S.busy = false; drawPin(); }
+};
+function startName(G, r) {
+  const names = new Map();
+  for (const e of r.edges) { const n = G.E[e].name; if (n) names.set(n, (names.get(n) || 0) + G.E[e].len); }
+  return [...names.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map((x) => x[0]).join(' · ');
+}
+
+/* ---------- rendering ---------- */
+const gradeColor = (g) => css(g <= 0.01 ? '--g1' : g <= 0.025 ? '--g2' : g <= 0.04 ? '--g3' : '--g4');
+function clearRoutes() { S.routes = []; routeLayer.clearLayers(); turnLayer.clearLayers(); followLayer.clearLayers(); if ($('directions')) $('directions').innerHTML = ''; $('results').innerHTML = ''; }
+function drawRoutes(fit) {
+  routeLayer.clearLayers(); turnLayer.clearLayers();
+  const surf = css('--surface');
+  S.routes.forEach((r, i) => {
+    if (i === S.sel) return;
+    const pl = L.polyline(r.coords, { color: css('--alt'), weight: 4, opacity: 0.7, dashArray: '2 8', lineCap: 'round' }).addTo(routeLayer);
+    pl.on('click', () => select(i));
+  });
+  const r = S.routes[S.sel];
+  if (r) {
+    L.polyline(r.coords, { color: surf, weight: 10, opacity: 0.95, lineJoin: 'round' }).addTo(routeLayer);
+    const byNew = H && r.type === 'loop' && S.streets;
+    for (const s of r.segs) L.polyline(s.pts, { color: byNew ? css(s.run ? '--alt' : '--accent') : gradeColor(s.g), weight: byNew && !s.run ? 7 : 6, lineJoin: 'round', lineCap: 'round' }).addTo(routeLayer);
+    // mile markers + direction arrows along the selected route
+    let acc = 0, nextMile = MI, nextArrow = MI / 8;
+    for (let i = 1; i < r.coords.length; i++) {
+      const p = r.coords[i - 1], q = r.coords[i], d = C.hav(p[0], p[1], q[0], q[1]);
+      while (d > 0 && (acc + d >= nextMile || acc + d >= nextArrow)) {
+        const isMile = nextMile <= nextArrow, at = isMile ? nextMile : nextArrow, f = (at - acc) / d;
+        const pt = [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+        if (isMile) {
+          if (r.len - at > 80) L.marker(pt, { icon: L.divIcon({ className: '', html: `<div class="mile">${Math.round(at / MI)}</div>`, iconSize: [20, 20], iconAnchor: [10, 10] }), interactive: false, zIndexOffset: 500 }).addTo(routeLayer);
+          nextMile += MI;
+        } else {
+          const brg = Math.atan2((q[1] - p[1]) * Math.cos(p[0] * Math.PI / 180), q[0] - p[0]) * 180 / Math.PI;
+          L.marker(pt, { icon: L.divIcon({ className: '', html: `<div class="arrow" style="transform:rotate(${brg.toFixed(0)}deg)">▲</div>`, iconSize: [16, 16], iconAnchor: [8, 8] }), interactive: false, zIndexOffset: 400 }).addTo(routeLayer);
+          nextArrow += MI / 4;
+        }
+      }
+      acc += d;
+    }
+    for (const t of turnsOf(r)) {
+      const label = t.kind === 'U' ? 'U-turn' : (t.kind === 'L' ? 'Left' : 'Right') + (t.onto ? ' onto ' + t.onto : '');
+      const m = L.marker(t.at, { icon: L.divIcon({ className: '', html: `<div class="turn ${t.kind === 'U' ? 'u' : ''}">${TURN_SVG[t.kind]}</div>`, iconSize: [18, 18], iconAnchor: [9, 9] }), zIndexOffset: 600 });
+      m.bindTooltip(label + ' · mile ' + (t.dist / MI).toFixed(2), { direction: 'top', offset: [0, -10] });
+      turnLayer.addLayer(m);
+    }
+  }
+  syncTurns();
+  S.routes.forEach((x, i) => {
+    const m = L.marker(x.start, { icon: L.divIcon({ className: '', html: i === S.sel ? `<div class="startpin on">${i + 1}</div><div class="sflabel">Start / Finish</div>` : `<div class="startpin">${i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: i === S.sel ? 1000 : 0 }).addTo(routeLayer);
+    m.on('click', () => select(i));
+  });
+  if (fit && r) map.fitBounds(L.latLngBounds(S.routes.flatMap((x) => [x.coords[0], ...x.coords.filter((_, j) => j % 10 === 0)])).pad(0.1), { paddingBottomRight: [0, innerWidth < 820 ? innerHeight * 0.35 : 0], paddingTopLeft: [innerWidth >= 820 ? 400 : 0, 0] });
+}
+/* ---------- turns: compare heading into and out of each junction ---------- */
+const TURN_SVG = {
+  L: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 14V8a2 2 0 0 0-2-2H4"/><path d="M6.5 3.5 4 6l2.5 2.5"/></svg>',
+  R: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 14V8a2 2 0 0 1 2-2h5"/><path d="M9.5 3.5 12 6 9.5 8.5"/></svg>',
+  U: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14V7a3.5 3.5 0 0 1 7 0v4"/><path d="M8.5 9 11 11.5 13.5 9"/></svg>'
+};
+function bearing(p, q) {
+  const k = Math.cos(p[0] * Math.PI / 180);
+  return Math.atan2((q[1] - p[1]) * k, q[0] - p[0]) * 180 / Math.PI;
+}
+function headingNear(pts, fromEnd) {
+  // heading over the ~20 m next to a junction, so a curb jog doesn't read as a turn
+  const seq = fromEnd ? pts.slice().reverse() : pts, a = seq[0];
+  let b = seq[1], acc = 0;
+  for (let i = 1; i < seq.length; i++) { acc += C.hav(seq[i - 1][0], seq[i - 1][1], seq[i][0], seq[i][1]); b = seq[i]; if (acc >= 20) break; }
+  const h = bearing(a, b);
+  return fromEnd ? (h + 180) % 360 : h;
+}
+function turnsOf(r) {
+  if (r._turns) return r._turns;
+  const out = []; let dist = 0;
+  for (let i = 0; i < r.segs.length - 1; i++) {
+    const s = r.segs[i], n = r.segs[i + 1];
+    for (let j = 1; j < s.pts.length; j++) dist += C.hav(s.pts[j - 1][0], s.pts[j - 1][1], s.pts[j][0], s.pts[j][1]);
+    if (s.pts.length < 2 || n.pts.length < 2) continue;
+    const hin = headingNear(s.pts, true), hout = headingNear(n.pts, false);
+    const d = ((hout - hin + 540) % 360) - 180; // + right, - left
+    const ad = Math.abs(d);
+    if (ad < 35) continue;
+    out.push({ at: s.pts[s.pts.length - 1], kind: ad >= 150 ? 'U' : d > 0 ? 'R' : 'L', onto: n.name && n.name !== s.name ? n.name : '', dist });
+  }
+  r._turns = out; return out;
+}
+const turnLayer = L.layerGroup().addTo(map);
+function syncTurns() {
+  const show = map.getZoom() >= 15;
+  if (show && !map.hasLayer(turnLayer)) map.addLayer(turnLayer);
+  if (!show && map.hasLayer(turnLayer)) map.removeLayer(turnLayer);
+}
+map.on('zoomend', syncTurns);
+
+/* ---------- directions: cue list + step-through slider ---------- */
+function cuesOf(r) {
+  if (r._cues) return r._cues;
+  const cues = [{ kind: 'S', dist: 0, at: r.coords[0], text: 'Start' + (r.segs[0] && r.segs[0].name ? ' on ' + r.segs[0].name : '') }];
+  let dist = 0;
+  for (let i = 0; i < r.segs.length - 1; i++) {
+    const s = r.segs[i], n = r.segs[i + 1];
+    for (let j = 1; j < s.pts.length; j++) dist += C.hav(s.pts[j - 1][0], s.pts[j - 1][1], s.pts[j][0], s.pts[j][1]);
+    if (s.pts.length < 2 || n.pts.length < 2) continue;
+    const d = ((headingNear(n.pts, false) - headingNear(s.pts, true) + 540) % 360) - 180, ad = Math.abs(d);
+    const onto = n.name && n.name !== s.name ? n.name : '';
+    if (ad >= 35) {
+      const kind = ad >= 150 ? 'U' : d > 0 ? 'R' : 'L';
+      const word = kind === 'U' ? 'U-turn' : kind === 'L' ? 'Turn left' : 'Turn right';
+      cues.push({ kind, dist, at: s.pts[s.pts.length - 1], text: word + (onto ? ' onto ' + onto : kind === 'U' && s.name ? ' on ' + s.name : '') });
+    } else if (onto) cues.push({ kind: 'C', dist, at: s.pts[s.pts.length - 1], text: 'Continue onto ' + onto });
+  }
+  cues.push({ kind: 'F', dist: r.len, at: r.coords[r.coords.length - 1], text: 'Finish at start' });
+  // drop cues closer than 15 m to the previous one (curb jogs at a single intersection)
+  r._cues = cues.filter((c, i) => i === 0 || c.kind === 'F' || c.dist - cues[i - 1].dist > 15);
+  return r._cues;
+}
+function cumOf(r) {
+  if (r._cum) return r._cum;
+  const c = [0];
+  for (let i = 1; i < r.coords.length; i++) c.push(c[i - 1] + C.hav(r.coords[i - 1][0], r.coords[i - 1][1], r.coords[i][0], r.coords[i][1]));
+  const k = r.len / (c[c.length - 1] || 1); // align with route length
+  r._cum = c.map((x) => x * k); return r._cum;
+}
+function pointAt(r, d) {
+  const cum = cumOf(r); let lo = 0, hi = cum.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= d) lo = m; else hi = m; }
+  const span = cum[hi] - cum[lo] || 1, f = Math.min(1, Math.max(0, (d - cum[lo]) / span));
+  const p = r.coords[lo], q = r.coords[hi];
+  return { i: lo, pt: [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f], brg: bearing(p, q) };
+}
+const followLayer = L.layerGroup().addTo(map);
+let followD = 0;
+function drawFollow(pan) {
+  followLayer.clearLayers();
+  const r = S.routes[S.sel]; if (!r) return;
+  const { i, pt, brg } = pointAt(r, followD);
+  const done = r.coords.slice(0, i + 1).concat([pt]);
+  if (followD > 0) {
+    L.polyline(r.coords, { color: css('--surface'), weight: 9, opacity: 0.55, interactive: false }).addTo(followLayer); // fade what's left
+    L.polyline(done, { color: css('--ink'), weight: 5, opacity: 0.9, lineJoin: 'round', interactive: false }).addTo(followLayer);
+  }
+  L.marker(pt, { icon: L.divIcon({ className: '', html: `<div class="me" style="--r:${brg.toFixed(0)}deg"><i></i></div>`, iconSize: [28, 28], iconAnchor: [14, 14] }), interactive: false, zIndexOffset: 2000 }).addTo(followLayer);
+  const cues = cuesOf(r), next = cues.find((c) => c.dist > followD + 5);
+  $('fwMile').textContent = (followD / MI).toFixed(2) + ' of ' + (r.len / MI).toFixed(2) + ' mi';
+  $('fwNext').textContent = next ? `${next.text} in ${fmtDist(next.dist - followD)}` : 'You’re back at the start';
+  $('fwRange').value = followD;
+  document.querySelectorAll('.cue').forEach((el) => el.classList.toggle('cur', +el.dataset.d <= followD + 5 && (!el.nextElementSibling || +el.nextElementSibling.dataset.d > followD + 5)));
+  if (pan) { const b = map.getBounds().pad(-0.2); if (!b.contains(pt)) focusAt(); }
+}
+function focusAt() {
+  const r = S.routes[S.sel]; if (!r) return;
+  const pt = pointAt(r, followD).pt;
+  // keep the point clear of the control sheet: left rail on desktop, bottom sheet on phones
+  const wide = innerWidth >= 820, z = Math.max(map.getZoom(), 16);
+  const px = map.project(pt, z).subtract([wide ? 200 : 0, wide ? 0 : -innerHeight * 0.2]);
+  map.stop(); map.setView(map.unproject(px, z), z, { animate: z === map.getZoom() });
+}
+function fmtDist(m) { return m < 0.2 * MI ? Math.round(m * FT / 10) * 10 + ' ft' : (m / MI).toFixed(2) + ' mi'; }
+function renderDirections() {
+  const box = $('directions'); const r = S.routes[S.sel];
+  if (!r) { box.innerHTML = ''; return; }
+  const cues = cuesOf(r);
+  box.innerHTML = `<div class="dir-head"><h3>Directions · route ${S.sel + 1}</h3><span id="fwMile"></span></div>
+    <div class="fw">
+      <button type="button" id="fwPrev" aria-label="Previous turn">◀</button>
+      <input type="range" id="fwRange" min="0" max="${r.len.toFixed(0)}" step="5" value="0" aria-label="Step through the route">
+      <button type="button" id="fwNextBtn" aria-label="Next turn">▶</button>
+    </div>
+    <div class="fw-next" id="fwNext"></div>
+    <ol class="cues">${cues.map((c, k) => `<li class="cue" data-d="${c.dist.toFixed(0)}" data-k="${k}"><span class="ic ${c.kind}">${CUE_ICON[c.kind]}</span><span class="tx">${c.text.replace(/</g, '&lt;')}</span><span class="mi">${(c.dist / MI).toFixed(2)}</span></li>`).join('')}</ol>`;
+  $('fwRange').oninput = (e) => { followD = +e.target.value; drawFollow(true); };
+  const jump = (dir) => {
+    const list = cues.map((c) => c.dist);
+    const t = dir > 0 ? list.find((d) => d > followD + 5) : [...list].reverse().find((d) => d < followD - 5);
+    if (t != null) { followD = t; drawFollow(false); focusAt(); }
+  };
+  $('fwPrev').onclick = () => jump(-1); $('fwNextBtn').onclick = () => jump(1);
+  box.querySelectorAll('.cue').forEach((el) => el.onclick = () => { followD = +el.dataset.d; drawFollow(false); focusAt(); });
+  followD = 0; drawFollow(false);
+}
+const CUE_ICON = {
+  S: '●', F: '⚑', C: '↑',
+  L: TURN_SVG.L, R: TURN_SVG.R, U: TURN_SVG.U
+};
+
+function select(i) {
+  S.sel = i; drawRoutes(false); renderDirections();
+  $('results').querySelectorAll('.card').forEach((c, j) => c.setAttribute('aria-pressed', String(j === i)));
+  const r = S.routes[i]; map.panInside(r.start, { padding: [60, 60] });
+}
+function profileSVG(r) {
+  const W = 320, H = 56, P = 2, d = r.prof.d, z = r.prof.z;
+  let lo = Math.min(...z), hi = Math.max(...z);
+  const span = Math.max(hi - lo, 30); const mid = (hi + lo) / 2; lo = mid - span / 2; hi = mid + span / 2;
+  const L = d[d.length - 1] || 1, step = Math.max(1, Math.floor(d.length / 160));
+  let path = '';
+  for (let i = 0; i < d.length; i += step) path += (path ? 'L' : 'M') + (P + (d[i] / L) * (W - 2 * P)).toFixed(1) + ',' + (H - 14 - ((z[i] - lo) / (hi - lo)) * (H - 22)).toFixed(1);
+  path += 'L' + (W - P) + ',' + (H - 14 - ((z[z.length - 1] - lo) / (hi - lo)) * (H - 22)).toFixed(1);
+  const area = path + `L${W - P},${H - 12}L${P},${H - 12}Z`;
+  const ft = (m) => Math.round(m * FT);
+  return `<svg class="prof" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Elevation profile">
+    <path d="${area}" fill="var(--accent-soft)" stroke="none"/>
+    <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+    <text x="${P}" y="${H - 1}">${ft(Math.min(...z))}–${ft(Math.max(...z))} ft elevation</text>
+  </svg>`;
+}
+function renderResults() {
+  const box = $('results'); box.innerHTML = '';
+  if (S.routes[0] && S.routes[0].offTarget) box.insertAdjacentHTML('beforeend', `<div class="warn">Nothing hit your tolerance. These are the closest matches.</div>`);
+  const byNew = H && S.routes[0] && S.routes[0].type === 'loop' && S.streets;
+  box.insertAdjacentHTML('beforeend', byNew
+    ? `<div class="legend"><span><i style="background:var(--accent)"></i>New to you</span><span><i style="background:var(--alt)"></i>Already run</span></div>`
+    : `<div class="legend"><span><i style="background:var(--g1)"></i>≤1%</span><span><i style="background:var(--g2)"></i>≤2.5%</span><span><i style="background:var(--g3)"></i>≤4%</span><span><i style="background:var(--g4)"></i>&gt;4%</span></div>`);
+  S.routes.forEach((r, i) => {
+    const card = document.createElement('div');
+    card.className = 'card'; card.setAttribute('role', 'button'); card.tabIndex = 0; card.setAttribute('aria-pressed', String(i === S.sel));
+    card.innerHTML = `<div class="top"><div class="rank">${i + 1}</div>
+      <div class="stats">
+        <div class="stat"><b>${(r.len / MI).toFixed(2)}</b><span>miles</span></div>
+        <div class="stat"><b>${(r.mx * 100).toFixed(1)}%</b><span>max grade</span></div>
+        <div class="stat"><b>${Math.round(r.climb * FT)}${climbBand(r) != null ? `<small> ±${climbBand(r)}</small>` : ''}</b><span>ft climb</span></div>
+        ${r.type === 'loop' && r.done != null
+          ? `<div class="stat"><b>${r.done}</b><span>streets finished</span></div><div class="stat"><b class="${r.partial ? 'bad' : ''}">${r.partial}</b><span>left partial</span></div><div class="stat"><b>${(r.newLen / MI).toFixed(1)}</b><span>new mi</span></div>`
+          : r.type === 'loop' ? `<div class="stat"><b>${r.streets}</b><span>streets</span></div><div class="stat"><b>${Math.round(r.repeat * 100)}%</b><span>repeated</span></div>` : ''}
+      </div></div>
+      <div class="where"></div>
+      ${profileSVG(r)}
+      <div class="acts"><a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${r.start[0].toFixed(6)},${r.start[1].toFixed(6)}">Go to start</a><button class="primary" type="button">Export GPX</button></div>`;
+    card.querySelector('.where').textContent = r.done != null
+      ? (r.doneNames.length ? 'Finishes: ' + r.doneNames.join(', ') : 'Finishes no streets') + (r.partialNames.length ? ' · Leaves partial: ' + r.partialNames.join(', ') : '') + (r.longLen > 50 ? ` · plus ${(r.longLen / MI).toFixed(1)} mi on long streets` : '')
+      : (r.type === 'ob' ? 'Out & back' : 'Loop') + (r.name ? ' · ' + r.name : '');
+    card.addEventListener('click', (e) => { if (e.target.closest('a,button')) return; select(i); });
+    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(i); } });
+    card.querySelector('button').onclick = () => exportGPX(r, i);
+    box.appendChild(card);
+  });
+  renderDirections();
+}
+function exportGPX(r, i) {
+  const elev = cache && cache.elev;
+  const name = `FlatRoute ${(r.len / MI).toFixed(1)} mi ${r.type === 'ob' ? 'out-and-back' : 'loop'}`;
+  const pts = r.coords.map((p) => `<trkpt lat="${p[0].toFixed(6)}" lon="${p[1].toFixed(6)}">${elev && isFinite(elev(p[0], p[1])) ? `<ele>${elev(p[0], p[1]).toFixed(1)}</ele>` : ''}</trkpt>`).join('\n');
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="FlatRoute" xmlns="http://www.topografix.com/GPX/1/1">
+<metadata><name>${name}</name></metadata>
+<trk><name>${name}</name><type>running</type><trkseg>
+${pts}
+</trkseg></trk></gpx>`;
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const file = new File([blob], `flatroute-${(r.len / MI).toFixed(1)}mi-${r.type}-${i + 1}.gpx`, { type: 'application/gpx+xml' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: name }).catch(() => download(blob, file.name));
+  } else download(blob, file.name);
+}
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+drawPin();
+})();
+</script>
+</body>
+</html>
