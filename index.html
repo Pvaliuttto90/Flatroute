@@ -101,6 +101,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .calib .pair{display:flex;gap:18px;flex-wrap:wrap}
 .acts a,.acts button{flex:1;text-align:center;border:1px solid var(--line);border-radius:10px;padding:9px 6px;background:var(--bg);color:var(--ink);font:600 14px var(--display);letter-spacing:.04em;text-transform:uppercase;text-decoration:none;cursor:pointer}
 .acts .filebtn{flex:1;text-align:center;border:1px solid var(--line);border-radius:10px;padding:9px 6px;background:var(--bg);color:var(--ink);font:600 14px var(--display);letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
+body:not(.owner) .owner-only{display:none}
 .acts .filebtn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
 .acts .primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .legend{display:flex;gap:10px;flex-wrap:wrap;font:600 12px var(--display);letter-spacing:.04em;color:var(--muted)}
@@ -187,10 +188,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <div class="field history">
       <div class="lab">My runs <b id="histOut">None loaded</b></div>
       <div class="acts">
-        <label class="filebtn">Load history<input type="file" id="histFile" accept=".json,application/json" hidden></label>
+        <label class="filebtn owner-only">Load history<input type="file" id="histFile" accept=".json,application/json" hidden></label>
         <label class="filebtn">Add runs<input type="file" id="gpxFile" accept=".gpx,.tcx" multiple hidden></label>
         <label class="filebtn">Check climb<input type="file" id="checkFile" accept=".gpx" hidden></label>
-        <label class="filebtn">Calibrate<input type="file" id="calibFile" accept=".json,application/json" hidden></label>
+        <label class="filebtn owner-only">Calibrate<input type="file" id="calibFile" accept=".json,application/json" hidden></label>
         <button type="button" id="histClear" hidden>Clear</button>
       </div>
     </div>
@@ -913,6 +914,14 @@ function status(text, err = false, pct = null) {
   $('bar').parentElement.hidden = pct == null;
   if (pct != null) $('bar').style.width = Math.round(pct * 100) + '%';
 }
+
+/* ---------- owner mode: #me turns on Load history + Calibrate (remembered), #public turns it off ---------- */
+function syncOwner() {
+  if (location.hash === '#me') store.set('owner', true);
+  if (location.hash === '#public') store.set('owner', false);
+  document.body.classList.toggle('owner', !!store.get('owner', false));
+}
+syncOwner(); addEventListener('hashchange', syncOwner);
 
 /* ---------- run history (cells ~17 m a run passed through) ---------- */
 let H = null; // {dLat, dLon, set:Set<number>, activities, files:[]}
