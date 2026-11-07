@@ -1481,16 +1481,25 @@ function drawFollow(pan) {
   $('fwRange').value = followD;
   $('fbNext').textContent = $('fwNext').textContent; $('fbMile').textContent = 'Route ' + (S.sel + 1) + ' · ' + $('fwMile').textContent;
   document.querySelectorAll('.cue').forEach((el) => el.classList.toggle('cur', +el.dataset.d <= followD + 5 && (!el.nextElementSibling || +el.nextElementSibling.dataset.d > followD + 5)));
-  if (pan) { const b = map.getBounds().pad(-0.2); if (!b.contains(pt)) focusAt(); }
+  if (pan) ensureVisible(pt);
 }
-function focusAt() {
-  const r = S.routes[S.sel]; if (!r) return;
-  const pt = pointAt(r, followD).pt;
-  // keep the point clear of the control sheet: left rail on desktop, bottom sheet on phones
-  const wide = innerWidth >= 820, z = Math.max(map.getZoom(), 16);
-  const px = map.project(pt, z).subtract([wide ? 200 : 0, wide ? 0 : -50]);
-  map.stop(); map.setView(map.unproject(px, z), z, { animate: z === map.getZoom() });
+/* The part of the map the user can actually see: not under the left panel (desktop rail or open phone drawer)
+   or the turn bar. Following the route only ever nudges the map by the minimum needed to bring the point
+   into that area. It never changes the zoom, and it never moves the map while the point is already visible. */
+function visibleRect() {
+  const sz = map.getSize(), sh = $('sheet'), M = 56;
+  const covered = narrow() && sh.classList.contains('min') ? 0 : sh.offsetLeft + sh.offsetWidth;
+  const bottom = !$('fbar').hidden ? $('fbar').getBoundingClientRect().top : sz.y;
+  return { l: covered + 24, r: sz.x - 24, t: M, b: Math.min(sz.y, bottom) - 24 };
 }
+function ensureVisible(pt) {
+  const v = visibleRect(); if (v.r - v.l < 120 || v.b - v.t < 80) return; // nothing sensible to aim for (phone drawer open)
+  const p = map.latLngToContainerPoint(pt);
+  const dx = p.x < v.l ? p.x - v.l : p.x > v.r ? p.x - v.r : 0;
+  const dy = p.y < v.t ? p.y - v.t : p.y > v.b ? p.y - v.b : 0;
+  if (dx || dy) map.panBy([dx, dy], { animate: true, duration: 0.25 });
+}
+function focusAt() { const r = S.routes[S.sel]; if (r) ensureVisible(pointAt(r, followD).pt); }
 function jumpCue(dir) {
   const r = S.routes[S.sel]; if (!r) return;
   const list = cuesOf(r).map((c) => c.dist);
@@ -1525,7 +1534,7 @@ const CUE_ICON = {
 function select(i) {
   S.sel = i; drawRoutes(false); renderDirections();
   $('results').querySelectorAll('.card').forEach((c, j) => c.setAttribute('aria-pressed', String(j === i)));
-  const r = S.routes[i]; map.panInside(r.start, { padding: [60, 60] });
+  const r = S.routes[i]; ensureVisible(r.start);
 }
 function profileSVG(r) {
   const W = 320, H = 56, P = 2, d = r.prof.d, z = r.prof.z;
