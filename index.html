@@ -187,7 +187,7 @@ body:not(.owner) .owner-only{display:none}
     <div class="field">
       <div class="lab">Route</div>
       <div class="seg" id="type"><button data-v="ob" aria-pressed="true">Out &amp; back</button><button data-v="loop" aria-pressed="false">Loop</button></div>
-      <label class="check" id="norepRow"><input type="checkbox" id="norep"> No repeated streets (never runs the same block twice, except dead ends; may need steeper grades)</label>
+      <label class="check" id="norepRow"><input type="checkbox" id="norep"> Avoid repeated streets (runs a block twice only if there is no other way, or at a dead end; may need steeper grades)</label>
       <label class="check" id="streetsRow"><input type="checkbox" id="streets"> Finish streets (runs every segment of each street it takes; long streets can be partial)</label>
     </div>
     <div class="row">
@@ -508,7 +508,7 @@ body:not(.owner) .owner-only{display:none}
       let u = o.u0 != null ? o.u0 : s, t = o.t0 || 0, prev = -1;
       const HT = o.homeT, home = HT ? (v) => HT.d(v) : (v) => this.home(v);
       const cs = [], ws = [];
-      const noRep = !!o.noRep;
+      const noRep = !!o.noRep, soft = o.noRep === 'soft';
       let rt = null, ret = null, chk = 0;
       if (noRep) {
         for (const x of o.pre || []) this.used[x.e] = us;
@@ -518,7 +518,8 @@ body:not(.owner) .owner-only{display:none}
          so instead of the shortest way home we look for one that is edge-disjoint from the outbound leg. */
       const ban = (ei) => this.used[ei] === us && !E[ei].dead;
       const tryReturn = () => {
-        rt.run(u, gmax, hi - t, () => false, ban);
+        // strict: edge-disjoint way home. soft: way home that avoids what we ran when it can, but may reuse it when it must.
+        if (soft) rt.run(u, gmax, hi - t, (ei) => (ban(ei) ? 8 : 1)); else rt.run(u, gmax, hi - t, () => false, ban);
         const r = rt.d(s);
         if (r === Infinity || t + r < lo) return null;
         return rt.path(s);
@@ -534,11 +535,12 @@ body:not(.owner) .owner-only{display:none}
         for (const ei of G.adj[u]) {
           const ed = E[ei]; if (ed.g > gmax) continue;
           if (o.allow && !o.allow(ei)) continue;
-          if (noRep && this.used[ei] === us && !ed.dead) continue;
+          if (noRep && !soft && this.used[ei] === us && !ed.dead) continue;
           const v = ed.a === u ? ed.b : ed.a;
           if (t + ed.len + home(v) > hi) continue;
           let w = 1;
           if (noRep && t > 0.3 * D && home(v) < home(u)) w *= 2.5; // lean toward closing the loop
+          if (soft && ban(ei)) w *= 0.05;
           if (ei === prev && deg > 1) w *= 0.02;
           if (this.used[ei] !== us) {
             if (streets) {
@@ -592,7 +594,7 @@ body:not(.owner) .owner-only{display:none}
           const ed = E[ei]; if (ed.g > gmax || (ban && ban(ei))) continue;
           const v = ed.a === u ? ed.b : ed.a, nl = this.len[u] + ed.len;
           if (nl > maxLen || this.done[v] === st) continue;
-          const nc = c + ed.len * (penal(ei) ? 3 : 1);
+          const pm = penal(ei), nc = c + ed.len * (typeof pm === 'number' ? pm : pm ? 3 : 1);
           if (this.seen[v] !== st || nc < this.cost[v]) { this.seen[v] = st; this.cost[v] = nc; this.len[v] = nl; this.pe[v] = ei; this.pu[v] = u; h.push(nc, v); }
         }
       }
@@ -825,12 +827,14 @@ body:not(.owner) .owner-only{display:none}
     for (const e of s) if (l.has(e)) n++;
     return n / Math.max(1, s.size);
   }
-  function rank(cands, mode, D, tol, k = 3, streets = false, hist = false) {
+  function rank(cands, mode, D, tol, k = 3, streets = false, hist = false, soft = false) {
     const within = cands.filter((c) => Math.abs(c.len - D) <= tol);
     const pool = (within.length ? within : cands.slice().sort((a, b) => Math.abs(a.len - D) - Math.abs(b.len - D)).slice(0, 12)).slice();
-    const key = (c) => streets ? [-(c.done - 0.8 * c.partial + c.longLen / 3200 - 40 * c.mx - c.climb * 0.022), c.repeat]
+    const base = (c) => streets ? [-(c.done - 0.8 * c.partial + c.longLen / 3200 - 40 * c.mx - c.climb * 0.022), c.repeat]
       : mode === 'grade' ? [Math.round(c.mx * 400), c.climb + 60 * (c.repeat || 0)] : [Math.round(c.climb / 3), c.mx + (c.repeat || 0)];
-    pool.sort((a, b) => { const x = key(a), y = key(b); return x[0] - y[0] || x[1] - y[1]; });
+    // soft no-repeat: fewest unavoidable repeated meters first (in 100 m steps), then the usual order
+    const key = soft ? (c) => [Math.round((c.live || 0) / 100)].concat(base(c)) : base;
+    pool.sort((a, b) => { const x = key(a), y = key(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; });
     const out = [];
     for (const c of pool) {
       if (out.every((o) => overlap(c, o) < 0.5)) { c.offTarget = !within.length; out.push(c); }
@@ -853,7 +857,9 @@ body:not(.owner) .owner-only{display:none}
     const homePenal = (ei) => { const sid = P.edgeSid[ei]; return sid >= 0 && !P.streets[sid].long; };
     if (!starts.length) throw new Error('No streets found inside the circle. Move the pin or make the radius bigger.');
     const cands = [];
-    let t0 = Date.now();
+    let t0 = Date.now(), soft = false;
+    for (const pass of noRep ? ['strict', 'soft'] : [false]) {
+    if (pass === 'soft') { if (cands.length) break; soft = true; } // nothing avoids repeats: fall back to the fewest repeats
     for (let i = 0; i < starts.length; i++) {
       const s = starts[i];
       if (type === 'ob') {
@@ -873,11 +879,11 @@ body:not(.owner) .owner-only{display:none}
           if (streets) homeT.run(s, g, D / 2 + tol, homePenal); // way home prefers streets that are already done
           let ok = 0;
           for (let k = 0; k < (noRep ? 40 : streets ? 20 : 30); k++) {
-            const steps = streets ? planStreets(G, srch, tree, homeT, P, s, D, tol, g, rnd, noRep) : srch.walk(s, D, tol, g, false, rnd, { noRep });
+            const steps = streets ? planStreets(G, srch, tree, homeT, P, s, D, tol, g, rnd, pass || false) : srch.walk(s, D, tol, g, false, rnd, { noRep: pass || false });
             if (!steps || steps.length < 3) continue;
             const c = loopStats(steps, G);
             if (Math.abs(c.len - D) > tol || c.repeat > (streets ? 0.6 : 0.4)) continue;
-            if (noRep && c.live > 1) continue; // strict: only dead-end spurs may be run twice
+            if (pass === 'strict' && c.live > 1) continue; // strict: only dead-end spurs may be run twice
             if (streets) Object.assign(c, completionStats(G, steps, P));
             cands.push(c); ok++;
           }
@@ -887,11 +893,12 @@ body:not(.owner) .owner-only{display:none}
       }
       if (Date.now() - t0 > 40) { onProgress((i + 1) / starts.length); await tick(); t0 = Date.now(); }
     }
+    }
     onProgress(1);
-    const top = rank(cands, mode, D, tol, 10, streets, !!opts.hist).map((c) => c.segs ? c
+    const top = rank(cands, mode, D, tol, 10, streets, !!opts.hist, soft).map((c) => c.segs ? c
       : Object.assign(makeRoute(G, c.steps, 'loop'), { streets: c.streets, repeat: c.repeat, live: c.live, newStreets: c.newStreets, newLen: c.newLen,
         done: c.done, partial: c.partial, longLen: c.longLen, doneNames: c.doneNames, partialNames: c.partialNames }));
-    return rank(top, mode, D, tol, 3, streets, !!opts.hist);
+    return rank(top, mode, D, tol, 3, streets, !!opts.hist, soft).map((r) => Object.assign(r, { softRep: soft }));
   }
 
   root.FlatCore = { hav, dest, buildGraph, markRun, smoothClimb, setClimb, computeProfiles, findRoutes, Searcher, makeRoute };
@@ -1324,7 +1331,7 @@ $('go').onclick = async () => {
     status('Searching routes…', false, 0.55);
     const routes = await C.findRoutes(G, { lat: S.pin[0], lon: S.pin[1], R, D, tol: S.tol * MI, type: S.type, mode: S.mode, streets: S.streets, noRep: S.noRep, hist: !!H, area: { lat: area.lat, lon: area.lon, r: area.r } },
       (p) => status('Searching routes…', false, 0.55 + 0.45 * p));
-    if (!routes.length) throw new Error(S.noRep && S.type === 'loop' ? 'No loop without repeated streets found. Try a longer distance, a bigger start radius, trails, or turn the option off.' : 'No routes of that length found. Try a shorter distance or turn on trails.');
+    if (!routes.length) throw new Error(S.noRep && S.type === 'loop' ? 'No loop found, even allowing repeats. Try a longer distance, a bigger start radius, or trails.' : 'No routes of that length found. Try a shorter distance or turn on trails.');
     routes.forEach((r) => { r.name = startName(G, r); });
     S.routes = routes; S.sel = 0; status('');
     renderResults(); drawRoutes(true);
@@ -1576,7 +1583,7 @@ function renderResults() {
       <div class="acts"><a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${r.start[0].toFixed(6)},${r.start[1].toFixed(6)}">Go to start</a><button class="primary" type="button">Export GPX</button></div>`;
     card.querySelector('.where').textContent = r.done != null
       ? (r.doneNames.length ? 'Finishes: ' + r.doneNames.join(', ') : 'Finishes no streets') + (r.partialNames.length ? ' · Leaves partial: ' + r.partialNames.join(', ') : '') + (r.longLen > 50 ? ` · plus ${(r.longLen / MI).toFixed(1)} mi on long streets` : '')
-      : (r.type === 'ob' ? 'Out & back' : 'Loop') + (r.name ? ' · ' + r.name : '') + (S.noRep && r.type === 'loop' && r.repeat * r.len > 5 ? ` · ${Math.round(r.repeat * r.len * FT / 10) * 10} ft of dead-end out-and-back` : '') + (S.noRep && r.type === 'loop' && r.mx > 0.04 ? ' · Steeper than usual: the flatter loops needed repeated streets' : '');
+      : (r.type === 'ob' ? 'Out & back' : 'Loop') + (r.name ? ' · ' + r.name : '') + (S.noRep && r.type === 'loop' && r.repeat * r.len - (r.live || 0) > 5 ? ` · ${Math.round((r.repeat * r.len - (r.live || 0)) * FT / 10) * 10} ft of dead-end out-and-back` : '') + (S.noRep && r.type === 'loop' && r.live > 5 ? ` · Repeats ${Math.round(r.live * FT / 10) * 10} ft: no way around it from here` : '') + (S.noRep && r.type === 'loop' && r.mx > 0.04 ? ' · Steeper than usual: the flatter loops needed repeated streets' : '');
     card.addEventListener('click', (e) => {
       if (e.target.closest('a,button')) return;
       select(i);
