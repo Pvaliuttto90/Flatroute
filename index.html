@@ -155,7 +155,20 @@ body:not(.owner) .owner-only{display:none}
 .arrow{width:16px;height:16px;display:grid;place-items:center;color:var(--surface);font-size:11px;line-height:1;text-shadow:0 0 2px var(--ink),0 0 2px var(--ink)}
 .sflabel{position:absolute;left:30px;top:3px;white-space:nowrap;background:var(--ink);color:var(--surface);font:700 11px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;border-radius:6px}
 .startpin.on{background:var(--accent);color:var(--accent-ink)}
+.edited{font:600 13px var(--display);color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
+.edited button{border:0;background:transparent;color:var(--accent);font:700 13px var(--display);letter-spacing:.04em;text-transform:uppercase;cursor:pointer;padding:2px 0}
+.toast{position:fixed;z-index:700;left:12px;right:12px;width:fit-content;margin:0 auto;bottom:calc(env(safe-area-inset-bottom,0px) + 150px);
+  display:flex;gap:12px;align-items:center;background:var(--ink);color:var(--surface);border-radius:12px;padding:10px 14px;box-shadow:var(--shadow);font:600 14px var(--display)}
+.toast button{border:0;background:transparent;color:var(--accent-soft);font:700 14px var(--display);letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.leaflet-popup-content-wrapper{background:var(--surface);color:var(--ink);border-radius:12px}
+.leaflet-popup-tip{background:var(--surface)}
+.blockpop{display:flex;flex-direction:column;gap:6px;min-width:190px;font:500 14px var(--body)}
+.blockpop b{font:700 16px var(--display)}
+.blockpop small{color:var(--muted);font-size:13px}
+.blockpop button{border:0;border-radius:10px;padding:9px;background:var(--accent);color:var(--accent-ink);font:700 14px var(--display);letter-spacing:.05em;text-transform:uppercase;cursor:pointer}
+.blockpop button:disabled{opacity:.5;cursor:default}
 @media (min-width:820px){
+  .toast{bottom:24px;left:412px;right:auto;margin:0}
   .sheet,.sheet.min{left:calc(env(safe-area-inset-left,0px) + 12px);top:12px;bottom:12px;width:380px;border-radius:18px;transform:none;box-shadow:var(--shadow);padding-top:0}
   .drawer-btn,.fbar{display:none!important}
   .hint{left:calc(50% + 196px)}
@@ -225,6 +238,7 @@ body:not(.owner) .owner-only{display:none}
   <svg class="open" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
   <svg class="close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
 </button>
+<div class="toast" id="toast" role="status" hidden></div>
 <div class="fbar" id="fbar" hidden>
   <input type="range" class="fb-range" id="fbRange" min="0" max="1" step="5" value="0" aria-label="Step through the route">
   <button type="button" class="fb-arrow" id="fbPrev" aria-label="Previous turn">◀</button>
@@ -799,7 +813,53 @@ body:not(.owner) .owner-only{display:none}
       const l = coords[coords.length - 1];
       if (!l || l[0] !== p[0] || l[1] !== p[1]) coords.push(p);
     }
-    return { type, len, climb, mx: st.mx, segs, prof, coords, start, edges: new Set(steps.map((s) => s.e)) };
+    return { type, len, climb, mx: st.mx, segs, prof, coords, start, steps, edges: new Set(steps.map((s) => s.e)) };
+  }
+
+  /* ---------- route editing: skip a block ---------- */
+  /* Cheapest way from `from` to `to` that avoids banned edges. Cost favors flat streets (a 3% block costs ~2x),
+     and lightly discourages reusing streets the route already runs. Capped in length so a "detour" stays local. */
+  function detour(G, from, to, banned, inRoute, maxLen) {
+    const E = G.E, h = new Heap(), cost = new Map([[from, 0]]), len = new Map([[from, 0]]), prev = new Map(), done = new Set();
+    h.push(0, from);
+    while (h.size) {
+      const u = h.pop(), c = h.lastKey;
+      if (done.has(u)) continue; done.add(u);
+      if (u === to) break;
+      for (const ei of G.adj[u]) {
+        if (banned.has(ei)) continue;
+        const ed = E[ei], v = ed.a === u ? ed.b : ed.a, nl = len.get(u) + ed.len;
+        if (done.has(v) || nl > maxLen) continue;
+        const nc = c + ed.len * (1 + 30 * ed.g) * (inRoute.has(ei) ? 1.4 : 1);
+        if (!cost.has(v) || nc < cost.get(v)) { cost.set(v, nc); len.set(v, nl); prev.set(v, [ei, u]); h.push(nc, v); }
+      }
+    }
+    if (!done.has(to)) return null;
+    const out = []; let v = to;
+    while (v !== from) { const [ei, p] = prev.get(v); out.push({ e: ei, fwd: E[ei].a === p, frac: 1 }); v = p; }
+    return out.reverse();
+  }
+  /* Returns {route} (a new route object, original untouched) or {err}. segIdx indexes route.segs. */
+  function avoidBlock(G, route, segIdx, bannedIn) {
+    const E = G.E, steps = route.steps, n = steps.length;
+    const k = segIdx < n ? segIdx : 2 * n - 1 - segIdx; // out & back: the way back mirrors the way out
+    if (k < 0 || k >= n) return { err: 'That block isn\u2019t part of the route.' };
+    const banned = new Set(bannedIn || []); banned.add(steps[k].e);
+    const inRoute = new Set(steps.map((s) => s.e)), out = [];
+    for (const s of steps) {
+      if (!banned.has(s.e)) { out.push(s); continue; }
+      const ed = E[s.e], from = s.fwd ? ed.a : ed.b, to = s.fwd ? ed.b : ed.a;
+      const d = detour(G, from, to, banned, inRoute, Math.max(500, 3 * ed.len + 300));
+      if (!d) {
+        if (route.type === 'ob' && s === steps[n - 1] && out.length) continue; // turnaround block: just turn around before it
+        return { err: 'No way around this block nearby.' };
+      }
+      for (const x of d) out.push(x);
+    }
+    const r = makeRoute(G, out, route.type);
+    if (route.type === 'loop') { const ls = loopStats(out, G); Object.assign(r, { streets: ls.streets, repeat: ls.repeat, live: ls.live, newStreets: ls.newStreets, newLen: ls.newLen }); }
+    r.banned = banned; r.name = route.name; r.base = route.base || { len: route.len, climb: route.climb, mx: route.mx }; r.edits = (route.edits || 0) + 1;
+    return { route: r };
   }
 
   /* ---------- starts, ranking ---------- */
@@ -903,7 +963,7 @@ body:not(.owner) .owner-only{display:none}
     return rank(top, mode, D, tol, 3, streets, !!opts.hist, soft).map((r) => Object.assign(r, { softRep: soft }));
   }
 
-  root.FlatCore = { hav, dest, buildGraph, markRun, smoothClimb, setClimb, computeProfiles, findRoutes, Searcher, makeRoute };
+  root.FlatCore = { hav, dest, buildGraph, markRun, smoothClimb, setClimb, computeProfiles, findRoutes, Searcher, makeRoute, avoidBlock };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1335,7 +1395,7 @@ $('go').onclick = async () => {
       (p) => status('Searching routes…', false, 0.55 + 0.45 * p));
     if (!routes.length) throw new Error(S.noRep && S.type === 'loop' ? 'No loop found, even allowing repeats. Try a longer distance, a bigger start radius, or trails.' : 'No routes of that length found. Try a shorter distance or turn on trails.');
     routes.forEach((r) => { r.name = startName(G, r); });
-    S.routes = routes; S.sel = 0; status('');
+    S.routes = routes; S.sel = 0; S.G = G; status('');
     renderResults(); drawRoutes(true);
   } catch (e) {
     status(e.message || String(e), true);
@@ -1349,7 +1409,7 @@ function startName(G, r) {
 
 /* ---------- rendering ---------- */
 const gradeColor = (g) => css(g <= 0.01 ? '--g1' : g <= 0.025 ? '--g2' : g <= 0.04 ? '--g3' : '--g4');
-function clearRoutes() { S.routes = []; if ($('fbar')) $('fbar').hidden = true; routeLayer.clearLayers(); turnLayer.clearLayers(); followLayer.clearLayers(); if ($('directions')) $('directions').innerHTML = ''; $('results').innerHTML = ''; }
+function clearRoutes() { S.routes = []; if ($('fbar')) $('fbar').hidden = true; routeLayer.clearLayers(); turnLayer.clearLayers(); followLayer.clearLayers(); if ($('toast')) $('toast').hidden = true; map.closePopup(); if ($('directions')) $('directions').innerHTML = ''; $('results').innerHTML = ''; }
 function drawRoutes(fit) {
   routeLayer.clearLayers(); turnLayer.clearLayers();
   const surf = css('--surface');
@@ -1360,9 +1420,11 @@ function drawRoutes(fit) {
   });
   const r = S.routes[S.sel];
   if (r) {
-    L.polyline(r.coords, { color: surf, weight: 10, opacity: 0.95, lineJoin: 'round' }).addTo(routeLayer);
+    L.polyline(r.coords, { color: surf, weight: 10, opacity: 0.95, lineJoin: 'round', interactive: false }).addTo(routeLayer);
     const byNew = H && r.type === 'loop' && S.streets;
     for (const s of r.segs) L.polyline(s.pts, { color: byNew ? css(s.run ? '--alt' : '--accent') : gradeColor(s.g), weight: byNew && !s.run ? 7 : 6, lineJoin: 'round', lineCap: 'round' }).addTo(routeLayer);
+    // tap any block (wide invisible hit area, easy with a thumb) to preview and skip it
+    r.segs.forEach((sg, si) => L.polyline(sg.pts, { weight: 26, opacity: 0, bubblingMouseEvents: false }).addTo(routeLayer).on('click', (ev) => blockPopup(ev.latlng, si)));
     // mile markers + direction arrows along the selected route
     let acc = 0, nextMile = MI, nextArrow = MI / 8;
     for (let i = 1; i < r.coords.length; i++) {
@@ -1488,7 +1550,8 @@ function drawFollow(pan) {
   $('fwMile').textContent = (followD / MI).toFixed(2) + ' of ' + (r.len / MI).toFixed(2) + ' mi';
   $('fwNext').textContent = next ? `${next.text} in ${fmtDist(next.dist - followD)}` : 'You’re back at the start';
   $('fwRange').value = followD; $('fbRange').value = followD;
-  $('fbNext').textContent = $('fwNext').textContent; $('fbMile').textContent = 'Route ' + (S.sel + 1) + ' · ' + $('fwMile').textContent;
+  const ed = r.edits && r.base ? ' · edited ' + sgn((r.len - r.base.len) / MI, 2) + ' mi' : '';
+  $('fbNext').textContent = $('fwNext').textContent; $('fbMile').textContent = 'Route ' + (S.sel + 1) + ' · ' + $('fwMile').textContent + ed;
   document.querySelectorAll('.cue').forEach((el) => el.classList.toggle('cur', +el.dataset.d <= followD + 5 && (!el.nextElementSibling || +el.nextElementSibling.dataset.d > followD + 5)));
   if (pan) ensureVisible(pt);
 }
@@ -1542,6 +1605,51 @@ const CUE_ICON = {
   L: TURN_SVG.L, R: TURN_SVG.R, U: TURN_SVG.U
 };
 
+/* ---------- editing: skip a block, with a live preview of what it does ---------- */
+const sgn = (x, d) => (x < 0 ? '\u2212' : '+') + Math.abs(x).toFixed(d);
+function blockPopup(latlng, si) {
+  const r = S.routes[S.sel]; if (!r || !S.G) return;
+  const sg = r.segs[si]; let len = 0;
+  for (let j = 1; j < sg.pts.length; j++) len += C.hav(sg.pts[j - 1][0], sg.pts[j - 1][1], sg.pts[j][0], sg.pts[j][1]);
+  const res = C.avoidBlock(S.G, r, si, r.banned);
+  const box = document.createElement('div'); box.className = 'blockpop';
+  const mk = (tag, text) => { const el = document.createElement(tag); el.textContent = text; box.appendChild(el); return el; };
+  mk('b', sg.name || 'Unnamed path');
+  mk('small', `${Math.round(len * FT)} ft \u00b7 ${(sg.g * 100).toFixed(1)}% steepest` + (r.type === 'ob' ? ' \u00b7 counts both ways' : ''));
+  const btn = document.createElement('button'); btn.textContent = 'Avoid this block';
+  if (res.err) { mk('small', res.err); btn.disabled = true; }
+  else {
+    const n = res.route;
+    mk('small', `Skip it: ${sgn((n.len - r.len) / MI, 2)} mi \u00b7 ${sgn((n.climb - r.climb) * FT, 0)} ft climb \u00b7 max grade ${(n.mx * 100).toFixed(1)}%`);
+    btn.onclick = () => { map.closePopup(); applyEdit(res.route); };
+  }
+  box.appendChild(btn);
+  L.popup({ closeButton: false, autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(box).openOn(map);
+}
+function refreshRoute(keep) {
+  renderResults(); drawRoutes(false);
+  followD = Math.min(keep, S.routes[S.sel].len); drawFollow(false);
+}
+function applyEdit(nr) {
+  const old = S.routes[S.sel], keep = followD;
+  nr.hist = (old.hist || []).concat([old]);
+  S.routes[S.sel] = nr; refreshRoute(keep);
+  toast(`Skipped a block \u00b7 ${sgn((nr.len - old.len) / MI, 2)} mi \u00b7 ${sgn((nr.climb - old.climb) * FT, 0)} ft climb`);
+}
+function undoEdit(toBase, i = S.sel) {
+  const r = S.routes[i]; if (!r || !r.hist || !r.hist.length) return;
+  const keep = followD; let prev;
+  if (toBase) { prev = r.hist[0]; prev.hist = []; } else { prev = r.hist[r.hist.length - 1]; prev.hist = r.hist.slice(0, -1); }
+  S.routes[i] = prev; S.sel = i; $('toast').hidden = true; refreshRoute(keep);
+}
+let toastT;
+function toast(msg) {
+  const t = $('toast'); t.textContent = '';
+  const sp = document.createElement('span'); sp.textContent = msg; t.appendChild(sp);
+  const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Undo'; b.onclick = () => undoEdit(false); t.appendChild(b);
+  t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 9000);
+}
+
 function select(i) {
   S.sel = i; drawRoutes(false); renderDirections();
   $('results').querySelectorAll('.card').forEach((c, j) => c.setAttribute('aria-pressed', String(j === i)));
@@ -1582,6 +1690,7 @@ function renderResults() {
           ? `<div class="stat"><b>${r.done}</b><span>streets finished</span></div><div class="stat"><b class="${r.partial ? 'bad' : ''}">${r.partial}</b><span>left partial</span></div><div class="stat"><b>${(r.newLen / MI).toFixed(1)}</b><span>new mi</span></div>`
           : r.type === 'loop' ? `<div class="stat"><b>${r.streets}</b><span>streets</span></div><div class="stat"><b>${Math.round((S.noRep ? (r.live || 0) / r.len : r.repeat) * 100)}%</b><span>repeated</span></div>` : ''}
       </div></div>
+      ${r.edits ? `<div class="edited"><span>Edited ${r.edits}\u00d7 vs. original: ${sgn((r.len - r.base.len) / MI, 2)} mi \u00b7 ${sgn((r.climb - r.base.climb) * FT, 0)} ft climb \u00b7 max grade ${(r.base.mx * 100).toFixed(1)}% \u2192 ${(r.mx * 100).toFixed(1)}%</span><button type="button" data-undo>Undo</button>${r.edits > 1 ? '<button type="button" data-reset>Reset</button>' : ''}</div>` : ''}
       <div class="where"></div>
       ${profileSVG(r)}
       <div class="acts"><a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${r.start[0].toFixed(6)},${r.start[1].toFixed(6)}">Go to start</a><button class="primary" type="button">Export GPX</button></div>`;
@@ -1594,7 +1703,10 @@ function renderResults() {
       if (narrow()) { setDrawer(false); const rr = S.routes[i]; map.fitBounds(L.latLngBounds(rr.coords).pad(0.1), { paddingBottomRight: [0, 90], paddingTopLeft: [0, 60] }); }
     });
     card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(i); } });
-    card.querySelector('button').onclick = () => exportGPX(r, i);
+    card.querySelector('.acts button').onclick = () => exportGPX(r, i);
+    const ub = card.querySelector('[data-undo]'), rb = card.querySelector('[data-reset]');
+    if (ub) ub.onclick = () => undoEdit(false, i);
+    if (rb) rb.onclick = () => undoEdit(true, i);
     box.appendChild(card);
   });
   renderDirections();
