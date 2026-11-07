@@ -187,6 +187,7 @@ body:not(.owner) .owner-only{display:none}
     <div class="field">
       <div class="lab">Route</div>
       <div class="seg" id="type"><button data-v="ob" aria-pressed="true">Out &amp; back</button><button data-v="loop" aria-pressed="false">Loop</button></div>
+      <label class="check" id="norepRow"><input type="checkbox" id="norep"> No repeated streets (never runs the same block twice, except dead ends; may need steeper grades)</label>
       <label class="check" id="streetsRow"><input type="checkbox" id="streets"> Finish streets (runs every segment of each street it takes; long streets can be partial)</label>
     </div>
     <div class="row">
@@ -305,7 +306,23 @@ body:not(.owner) .owner-only{display:none}
     }
     const adj = V.map(() => []);
     E.forEach((e, i) => { adj[e.a].push(i); adj[e.b].push(i); });
+    markDead(E, adj);
     return { V, E, adj };
+  }
+  /* Dead-end spurs: peel degree-1 vertices repeatedly. An edge peeled this way leads only into a
+     cul-de-sac (or a chain of them), so running it twice is unavoidable, not a "repeat". */
+  function markDead(E, adj) {
+    const deg = adj.map((a) => a.length), q = [];
+    E.forEach((e) => { e.dead = false; });
+    deg.forEach((d, v) => { if (d === 1) q.push(v); });
+    while (q.length) {
+      const v = q.pop();
+      if (deg[v] !== 1) continue;
+      const ei = adj[v].find((x) => !E[x].dead); if (ei === undefined) continue;
+      E[ei].dead = true; deg[v]--;
+      const w = E[ei].a === v ? E[ei].b : E[ei].a;
+      if (--deg[w] === 1) q.push(w);
+    }
   }
 
   /* ---------- elevation profiles & grades ---------- */
@@ -489,18 +506,39 @@ body:not(.owner) .owner-only{display:none}
       const G = this.G, E = G.E, us = ++this.useStamp, steps = [], names = new Set();
       const hi = D + tol * 0.8, lo = D - tol * 0.5;
       let u = o.u0 != null ? o.u0 : s, t = o.t0 || 0, prev = -1;
-      const HT = o.homeT, home = HT ? (v) => HT.d(v) : (v) => home(v);
+      const HT = o.homeT, home = HT ? (v) => HT.d(v) : (v) => this.home(v);
       const cs = [], ws = [];
+      const noRep = !!o.noRep;
+      let rt = null, ret = null, chk = 0;
+      if (noRep) {
+        for (const x of o.pre || []) this.used[x.e] = us;
+        rt = this.rt || (this.rt = new Tree(G));
+      }
+      /* No-repeat mode: the way home must avoid every street already run (dead-end spurs excepted),
+         so instead of the shortest way home we look for one that is edge-disjoint from the outbound leg. */
+      const ban = (ei) => this.used[ei] === us && !E[ei].dead;
+      const tryReturn = () => {
+        rt.run(u, gmax, hi - t, () => false, ban);
+        const r = rt.d(s);
+        if (r === Infinity || t + r < lo) return null;
+        return rt.path(s);
+      };
       for (let k = 0; k < 6000; k++) {
-        if (t + home(u) >= lo) break;
+        const out = t + home(u) >= lo;
+        if (noRep) {
+          if (t >= 0.35 * D && (out || ++chk % 3 === 0)) { ret = tryReturn(); if (ret) break; }
+          if (out) return null;
+        } else if (out) break;
         cs.length = 0; ws.length = 0; let tot = 0;
         const deg = G.adj[u].length;
         for (const ei of G.adj[u]) {
           const ed = E[ei]; if (ed.g > gmax) continue;
           if (o.allow && !o.allow(ei)) continue;
+          if (noRep && this.used[ei] === us && !ed.dead) continue;
           const v = ed.a === u ? ed.b : ed.a;
           if (t + ed.len + home(v) > hi) continue;
           let w = 1;
+          if (noRep && t > 0.3 * D && home(v) < home(u)) w *= 2.5; // lean toward closing the loop
           if (ei === prev && deg > 1) w *= 0.02;
           if (this.used[ei] !== us) {
             if (streets) {
@@ -518,6 +556,10 @@ body:not(.owner) .owner-only{display:none}
         steps.push({ e: ei, fwd, frac: 1 }); this.used[ei] = us;
         if (ed.name && !ed.run) names.add(ed.name);
         t += ed.len; u = fwd ? ed.b : ed.a; prev = ei;
+      }
+      if (noRep) {
+        if (!ret) ret = tryReturn();
+        return ret ? steps.concat(ret) : null;
       }
       if (home(u) === Infinity) return null;
       const pe = HT ? HT.pe : this.pe, pu = HT ? HT.pu : this.pu;
@@ -539,7 +581,7 @@ body:not(.owner) .owner-only{display:none}
       this.cost = new Float64Array(n); this.len = new Float64Array(n);
       this.seen = new Int32Array(n); this.done = new Int32Array(n); this.pe = new Int32Array(n); this.pu = new Int32Array(n);
     }
-    run(s, gmax, maxLen, penal) {
+    run(s, gmax, maxLen, penal, ban) {
       const G = this.G, E = G.E, h = this.h, st = ++this.stamp;
       h.clear(); this.cost[s] = 0; this.len[s] = 0; this.seen[s] = st; this.pe[s] = -1; h.push(0, s);
       while (h.size) {
@@ -547,7 +589,7 @@ body:not(.owner) .owner-only{display:none}
         if (this.done[u] === st || c > this.cost[u]) continue;
         this.done[u] = st;
         for (const ei of G.adj[u]) {
-          const ed = E[ei]; if (ed.g > gmax) continue;
+          const ed = E[ei]; if (ed.g > gmax || (ban && ban(ei))) continue;
           const v = ed.a === u ? ed.b : ed.a, nl = this.len[u] + ed.len;
           if (nl > maxLen || this.done[v] === st) continue;
           const nc = c + ed.len * (penal(ei) ? 3 : 1);
@@ -620,7 +662,7 @@ body:not(.owner) .owner-only{display:none}
     for (const x of walk) { end = x.fwd ? E[x.e].b : E[x.e].a; len += E[x.e].len; }
     return { walk, end, len };
   }
-  function planStreets(G, srch, tree, homeT, P, s, D, tol, gmax, rnd) {
+  function planStreets(G, srch, tree, homeT, P, s, D, tol, gmax, rnd, noRep) {
     const E = G.E, hi = D + tol * 0.8, lo = D - tol * 0.5, steps = [], donePiece = new Set(), started = new Set();
     let u = s, t = 0;
     const penal = (ei) => { const sid = P.edgeSid[ei]; return sid >= 0 && !P.streets[sid].long && !started.has(sid); };
@@ -661,8 +703,8 @@ body:not(.owner) .owner-only{display:none}
     }
     // pad to distance on streets that won't be left half-done, then head home
     const allow = (ei) => { const sid = P.edgeSid[ei]; return sid < 0 || P.streets[sid].long || started.has(sid); };
-    let tail = srch.walk(s, D, tol, gmax, false, rnd, { u0: u, t0: t, allow, homeT });
-    if (!tail) tail = srch.walk(s, D, tol, gmax, false, rnd, { u0: u, t0: t, homeT });
+    let tail = srch.walk(s, D, tol, gmax, false, rnd, { u0: u, t0: t, allow, homeT, noRep, pre: steps });
+    if (!tail) tail = srch.walk(s, D, tol, gmax, false, rnd, { u0: u, t0: t, homeT, noRep, pre: steps });
     return tail ? steps.concat(tail) : null;
   }
   function completionStats(G, steps, P) {
@@ -683,16 +725,16 @@ body:not(.owner) .owner-only{display:none}
   }
 
   function loopStats(steps, G) {
-    let len = 0, up = 0, mx = 0, rep = 0, newLen = 0;
+    let len = 0, up = 0, mx = 0, rep = 0, newLen = 0, live = 0;
     const seen = new Set(), names = new Set(), newNames = new Set();
     for (const s of steps) {
       const e = G.E[s.e];
       len += e.len; up += s.fwd ? e.up : e.dn; if (e.g > mx) mx = e.g;
-      if (seen.has(s.e)) rep += e.len;
+      if (seen.has(s.e)) { rep += e.len; if (!e.dead) live += e.len; }
       else { seen.add(s.e); if (!e.run) { newLen += e.len; if (e.name) newNames.add(e.name); } }
       if (e.name) names.add(e.name);
     }
-    return { steps, type: 'loop', len, climb: up, mx, repeat: rep / Math.max(1, len), streets: names.size,
+    return { steps, type: 'loop', len, climb: up, mx, repeat: rep / Math.max(1, len), live, streets: names.size,
       newStreets: newNames.size, newLen, edges: seen };
   }
   function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -797,13 +839,15 @@ body:not(.owner) .owner-only{display:none}
     return out;
   }
 
+  const NOREP_MAX = 0.08; // with no-repeat on, never trade more than 8% grade for avoiding a repeat
   const LEVELS = [0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.15, 1];
   const tick = () => new Promise((r) => setTimeout(r, 0));
 
   /* opts: {lat, lon, R, D, tol (m), type 'ob'|'loop', mode 'grade'|'climb'} */
   async function findRoutes(G, opts, onProgress = () => {}) {
     const srch = new Searcher(G);
-    const { lat, lon, R, D, tol, type, mode } = opts, streets = !!opts.streets && type === 'loop';
+    const { lat, lon, R, D, tol, type, mode } = opts, streets = !!opts.streets && type === 'loop', noRep = !!opts.noRep && type === 'loop';
+    const levels = noRep ? LEVELS.filter((g) => g <= NOREP_MAX) : LEVELS;
     const starts = pickStarts(G, srch, lat, lon, R, type === 'ob' ? 60 : streets ? 12 : 18);
     const P = streets ? buildPieces(G, D, opts.area) : null, tree = streets ? new Tree(G) : null, homeT = streets ? new Tree(G) : null;
     const homePenal = (ei) => { const sid = P.edgeSid[ei]; return sid >= 0 && !P.streets[sid].long; };
@@ -824,15 +868,16 @@ body:not(.owner) .owner-only{display:none}
       } else {
         const rnd = rng(s * 2654435761 + 7);
         let found = false, extra = 1;
-        for (const g of LEVELS) {
+        for (const g of levels) {
           srch.homeTree(s, g, D / 2 + tol);
           if (streets) homeT.run(s, g, D / 2 + tol, homePenal); // way home prefers streets that are already done
           let ok = 0;
-          for (let k = 0; k < (streets ? 20 : 30); k++) {
-            const steps = streets ? planStreets(G, srch, tree, homeT, P, s, D, tol, g, rnd) : srch.walk(s, D, tol, g, false, rnd);
+          for (let k = 0; k < (noRep ? 40 : streets ? 20 : 30); k++) {
+            const steps = streets ? planStreets(G, srch, tree, homeT, P, s, D, tol, g, rnd, noRep) : srch.walk(s, D, tol, g, false, rnd, { noRep });
             if (!steps || steps.length < 3) continue;
             const c = loopStats(steps, G);
             if (Math.abs(c.len - D) > tol || c.repeat > (streets ? 0.6 : 0.4)) continue;
+            if (noRep && c.live > 1) continue; // strict: only dead-end spurs may be run twice
             if (streets) Object.assign(c, completionStats(G, steps, P));
             cands.push(c); ok++;
           }
@@ -844,7 +889,7 @@ body:not(.owner) .owner-only{display:none}
     }
     onProgress(1);
     const top = rank(cands, mode, D, tol, 10, streets, !!opts.hist).map((c) => c.segs ? c
-      : Object.assign(makeRoute(G, c.steps, 'loop'), { streets: c.streets, repeat: c.repeat, newStreets: c.newStreets, newLen: c.newLen,
+      : Object.assign(makeRoute(G, c.steps, 'loop'), { streets: c.streets, repeat: c.repeat, live: c.live, newStreets: c.newStreets, newLen: c.newLen,
         done: c.done, partial: c.partial, longLen: c.longLen, doneNames: c.doneNames, partialNames: c.partialNames }));
     return rank(top, mode, D, tol, 3, streets, !!opts.hist);
   }
@@ -868,7 +913,7 @@ const store = {
 const S = {
   pin: store.get('pin', null), radius: store.get('radius', 1), dist: store.get('dist', 5),
   type: store.get('type', 'ob'), mode: store.get('mode', 'grade'), tol: store.get('tol', 0.25),
-  paths: store.get('paths', false), streets: store.get('streets', false), routes: [], sel: 0, busy: false
+  paths: store.get('paths', false), streets: store.get('streets', false), noRep: store.get('noRep', false), routes: [], sel: 0, busy: false
 };
 
 /* ---------- map ---------- */
@@ -919,7 +964,7 @@ function segInit(id, key, parse = (v) => v) {
   el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S[key] = parse(b.dataset.v); store.set(key, S[key]); paint(); syncStreets(); });
   paint();
 }
-function syncStreets() { $('streetsRow').hidden = S.type !== 'loop'; }
+function syncStreets() { $('streetsRow').hidden = S.type !== 'loop'; $('norepRow').hidden = S.type !== 'loop'; }
 segInit('type', 'type'); segInit('mode', 'mode'); segInit('tol', 'tol', Number);
 const rad = $('radius'), dist = $('dist');
 rad.value = S.radius; dist.value = S.dist; $('paths').checked = S.paths;
@@ -931,6 +976,8 @@ document.querySelectorAll('[data-step]').forEach((b) => b.onclick = () => { dist
 $('paths').onchange = (e) => { S.paths = e.target.checked; store.set('paths', S.paths); };
 $('streets').checked = S.streets; syncStreets();
 $('streets').onchange = (e) => { S.streets = e.target.checked; store.set('streets', S.streets); };
+$('norep').checked = S.noRep;
+$('norep').onchange = (e) => { S.noRep = e.target.checked; store.set('noRep', S.noRep); };
 const narrow = () => innerWidth < 820;
 function setDrawer(open) {
   $('sheet').classList.toggle('min', !open);
@@ -1275,9 +1322,9 @@ $('go').onclick = async () => {
     const area = await getGraph(S.pin[0], S.pin[1], reach), G = area.G;
     C.markRun(G, H ? histHas : null);
     status('Searching routes…', false, 0.55);
-    const routes = await C.findRoutes(G, { lat: S.pin[0], lon: S.pin[1], R, D, tol: S.tol * MI, type: S.type, mode: S.mode, streets: S.streets, hist: !!H, area: { lat: area.lat, lon: area.lon, r: area.r } },
+    const routes = await C.findRoutes(G, { lat: S.pin[0], lon: S.pin[1], R, D, tol: S.tol * MI, type: S.type, mode: S.mode, streets: S.streets, noRep: S.noRep, hist: !!H, area: { lat: area.lat, lon: area.lon, r: area.r } },
       (p) => status('Searching routes…', false, 0.55 + 0.45 * p));
-    if (!routes.length) throw new Error('No routes of that length found. Try a shorter distance or turn on trails.');
+    if (!routes.length) throw new Error(S.noRep && S.type === 'loop' ? 'No loop without repeated streets found. Try a longer distance, a bigger start radius, trails, or turn the option off.' : 'No routes of that length found. Try a shorter distance or turn on trails.');
     routes.forEach((r) => { r.name = startName(G, r); });
     S.routes = routes; S.sel = 0; status('');
     renderResults(); drawRoutes(true);
@@ -1509,18 +1556,18 @@ function renderResults() {
     card.innerHTML = `<div class="top"><div class="rank">${i + 1}</div>
       <div class="stats">
         <div class="stat"><b>${(r.len / MI).toFixed(2)}</b><span>miles</span></div>
-        <div class="stat"><b>${(r.mx * 100).toFixed(1)}%</b><span>max grade</span></div>
+        <div class="stat"><b class="${r.mx > 0.04 && S.noRep ? 'bad' : ''}">${(r.mx * 100).toFixed(1)}%</b><span>max grade</span></div>
         <div class="stat"><b>${Math.round(r.climb * FT)}${climbBand(r) != null ? `<small> ±${climbBand(r)}</small>` : ''}</b><span>ft climb</span></div>
         ${r.type === 'loop' && r.done != null
           ? `<div class="stat"><b>${r.done}</b><span>streets finished</span></div><div class="stat"><b class="${r.partial ? 'bad' : ''}">${r.partial}</b><span>left partial</span></div><div class="stat"><b>${(r.newLen / MI).toFixed(1)}</b><span>new mi</span></div>`
-          : r.type === 'loop' ? `<div class="stat"><b>${r.streets}</b><span>streets</span></div><div class="stat"><b>${Math.round(r.repeat * 100)}%</b><span>repeated</span></div>` : ''}
+          : r.type === 'loop' ? `<div class="stat"><b>${r.streets}</b><span>streets</span></div><div class="stat"><b>${Math.round((S.noRep ? (r.live || 0) / r.len : r.repeat) * 100)}%</b><span>repeated</span></div>` : ''}
       </div></div>
       <div class="where"></div>
       ${profileSVG(r)}
       <div class="acts"><a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${r.start[0].toFixed(6)},${r.start[1].toFixed(6)}">Go to start</a><button class="primary" type="button">Export GPX</button></div>`;
     card.querySelector('.where').textContent = r.done != null
       ? (r.doneNames.length ? 'Finishes: ' + r.doneNames.join(', ') : 'Finishes no streets') + (r.partialNames.length ? ' · Leaves partial: ' + r.partialNames.join(', ') : '') + (r.longLen > 50 ? ` · plus ${(r.longLen / MI).toFixed(1)} mi on long streets` : '')
-      : (r.type === 'ob' ? 'Out & back' : 'Loop') + (r.name ? ' · ' + r.name : '');
+      : (r.type === 'ob' ? 'Out & back' : 'Loop') + (r.name ? ' · ' + r.name : '') + (S.noRep && r.type === 'loop' && r.repeat * r.len > 5 ? ` · ${Math.round(r.repeat * r.len * FT / 10) * 10} ft of dead-end out-and-back` : '') + (S.noRep && r.type === 'loop' && r.mx > 0.04 ? ' · Steeper than usual: the flatter loops needed repeated streets' : '');
     card.addEventListener('click', (e) => {
       if (e.target.closest('a,button')) return;
       select(i);
