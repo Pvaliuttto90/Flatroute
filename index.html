@@ -58,9 +58,10 @@ body{background:var(--bg);color:var(--ink);font:15px/1.4 var(--body);overflow:hi
 .drawer-btn .open,.sheet.min + .drawer-btn .close{display:none}
 .sheet.min + .drawer-btn .open{display:block}
 .fbar{position:fixed;z-index:550;left:calc(env(safe-area-inset-left,0px) + 10px);right:calc(env(safe-area-inset-right,0px) + 10px);
-  bottom:calc(env(safe-area-inset-bottom,0px) + 22px);display:flex;gap:6px;align-items:stretch;
+  bottom:calc(env(safe-area-inset-bottom,0px) + 22px);display:flex;flex-wrap:wrap;gap:6px;align-items:stretch;
   background:var(--ink);color:var(--surface);border-radius:14px;padding:6px;box-shadow:var(--shadow)}
 .fbar button{border:0;border-radius:10px;background:transparent;color:inherit;cursor:pointer;font:600 15px var(--display)}
+.fbar .fb-range{flex:1 0 100%;height:32px;margin:0;padding:0 6px;accent-color:var(--surface);touch-action:pan-y}
 .fbar .fb-arrow{width:44px;background:rgba(255,255,255,.12)}
 .fbar .fb-mid{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:4px 6px}
 .fbar .fb-mid b{font:600 15px/1.2 var(--display);overflow-wrap:anywhere}
@@ -225,6 +226,7 @@ body:not(.owner) .owner-only{display:none}
   <svg class="close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
 </button>
 <div class="fbar" id="fbar" hidden>
+  <input type="range" class="fb-range" id="fbRange" min="0" max="1" step="5" value="0" aria-label="Step through the route">
   <button type="button" class="fb-arrow" id="fbPrev" aria-label="Previous turn">◀</button>
   <button type="button" class="fb-mid" id="fbMid" aria-label="Open directions"><b id="fbNext"></b><span id="fbMile"></span></button>
   <button type="button" class="fb-arrow" id="fbNextBtn" aria-label="Next turn">▶</button>
@@ -1478,7 +1480,7 @@ function drawFollow(pan) {
   const cues = cuesOf(r), next = cues.find((c) => c.dist > followD + 5);
   $('fwMile').textContent = (followD / MI).toFixed(2) + ' of ' + (r.len / MI).toFixed(2) + ' mi';
   $('fwNext').textContent = next ? `${next.text} in ${fmtDist(next.dist - followD)}` : 'You’re back at the start';
-  $('fwRange').value = followD;
+  $('fwRange').value = followD; $('fbRange').value = followD;
   $('fbNext').textContent = $('fwNext').textContent; $('fbMile').textContent = 'Route ' + (S.sel + 1) + ' · ' + $('fwMile').textContent;
   document.querySelectorAll('.cue').forEach((el) => el.classList.toggle('cur', +el.dataset.d <= followD + 5 && (!el.nextElementSibling || +el.nextElementSibling.dataset.d > followD + 5)));
   if (pan) ensureVisible(pt);
@@ -1506,6 +1508,7 @@ function jumpCue(dir) {
   const t = dir > 0 ? list.find((d) => d > followD + 5) : [...list].reverse().find((d) => d < followD - 5);
   if (t != null) { followD = t; drawFollow(false); focusAt(); }
 }
+$('fbRange').oninput = (e) => { followD = +e.target.value; drawFollow(true); };
 $('fbPrev').onclick = () => jumpCue(-1); $('fbNextBtn').onclick = () => jumpCue(1);
 $('fbMid').onclick = () => setDrawer(true);
 function fmtDist(m) { return m < 0.2 * MI ? Math.round(m * FT / 10) * 10 + ' ft' : (m / MI).toFixed(2) + ' mi'; }
@@ -1522,6 +1525,7 @@ function renderDirections() {
     <div class="fw-next" id="fwNext"></div>
     <ol class="cues">${cues.map((c, k) => `<li class="cue" data-d="${c.dist.toFixed(0)}" data-k="${k}"><span class="ic ${c.kind}">${CUE_ICON[c.kind]}</span><span class="tx">${c.text.replace(/</g, '&lt;')}</span><span class="mi">${(c.dist / MI).toFixed(2)}</span></li>`).join('')}</ol>`;
   $('fwRange').oninput = (e) => { followD = +e.target.value; drawFollow(true); };
+  $('fbRange').max = r.len.toFixed(0);
   $('fwPrev').onclick = () => jumpCue(-1); $('fwNextBtn').onclick = () => jumpCue(1);
   box.querySelectorAll('.cue').forEach((el) => el.onclick = () => { followD = +el.dataset.d; if (narrow()) setDrawer(false); drawFollow(false); focusAt(); });
   followD = 0; drawFollow(false);
