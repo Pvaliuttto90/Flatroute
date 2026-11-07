@@ -155,9 +155,21 @@ body:not(.owner) .owner-only{display:none}
 .arrow{width:16px;height:16px;display:grid;place-items:center;color:var(--surface);font-size:11px;line-height:1;text-shadow:0 0 2px var(--ink),0 0 2px var(--ink)}
 .sflabel{position:absolute;left:30px;top:3px;white-space:nowrap;background:var(--ink);color:var(--surface);font:700 11px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;border-radius:6px}
 .startpin.on{background:var(--accent);color:var(--accent-ink)}
+.fab2{top:calc(env(safe-area-inset-top,0px) + 64px)}
+.fab.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.ebar{position:fixed;z-index:560;left:calc(env(safe-area-inset-left,0px) + 10px);right:calc(env(safe-area-inset-right,0px) + 10px);
+  bottom:calc(env(safe-area-inset-bottom,0px) + 22px);display:flex;flex-direction:column;gap:8px;background:var(--ink);color:var(--surface);border-radius:14px;padding:10px;box-shadow:var(--shadow)}
+.ebar .estat{font:600 15px/1.25 var(--display);font-variant-numeric:tabular-nums}
+.ebar .estat.pv{color:var(--accent-soft)}
+.ebar .ehint{font:500 12px var(--body);opacity:.7}
+.ebar .eacts{display:flex;gap:8px}
+.ebar .eacts button{flex:1;border:1px solid rgba(255,255,255,.25);border-radius:10px;padding:10px 6px;background:transparent;color:inherit;font:700 14px var(--display);letter-spacing:.05em;text-transform:uppercase;cursor:pointer}
+.ebar .eacts button:disabled{opacity:.4;cursor:default}
+.ebar .eacts .primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.reshaping .leaflet-overlay-pane{opacity:.3}
 .edited{font:600 13px var(--display);color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
 .edited button{border:0;background:transparent;color:var(--accent);font:700 13px var(--display);letter-spacing:.04em;text-transform:uppercase;cursor:pointer;padding:2px 0}
-.toast{position:fixed;z-index:700;left:12px;right:12px;width:fit-content;margin:0 auto;bottom:calc(env(safe-area-inset-bottom,0px) + 150px);
+.toast{position:fixed;z-index:700;left:12px;right:12px;width:fit-content;margin:0 auto;bottom:calc(env(safe-area-inset-bottom,0px) + 170px);
   display:flex;gap:12px;align-items:center;background:var(--ink);color:var(--surface);border-radius:12px;padding:10px 14px;box-shadow:var(--shadow);font:600 14px var(--display)}
 .toast button{border:0;background:transparent;color:var(--accent-soft);font:700 14px var(--display);letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
 .leaflet-popup-content-wrapper{background:var(--surface);color:var(--ink);border-radius:12px}
@@ -168,7 +180,8 @@ body:not(.owner) .owner-only{display:none}
 .blockpop button{border:0;border-radius:10px;padding:9px;background:var(--accent);color:var(--accent-ink);font:700 14px var(--display);letter-spacing:.05em;text-transform:uppercase;cursor:pointer}
 .blockpop button:disabled{opacity:.5;cursor:default}
 @media (min-width:820px){
-  .toast{bottom:24px;left:412px;right:auto;margin:0}
+  .toast{bottom:150px;left:412px;right:auto;margin:0}
+  .ebar{left:412px;right:12px;bottom:24px}
   .sheet,.sheet.min{left:calc(env(safe-area-inset-left,0px) + 12px);top:12px;bottom:12px;width:380px;border-radius:18px;transform:none;box-shadow:var(--shadow);padding-top:0}
   .drawer-btn,.fbar{display:none!important}
   .hint{left:calc(50% + 196px)}
@@ -183,6 +196,14 @@ body:not(.owner) .owner-only{display:none}
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
 </button>
 
+<button class="fab fab2" id="editBtn" aria-label="Edit route" aria-pressed="false" title="Edit route" hidden>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>
+</button>
+<div class="ebar" id="ebar" hidden>
+  <div class="estat" id="estat" aria-live="polite"></div>
+  <div class="ehint">Drag the route to reshape it · tap a block to skip it</div>
+  <div class="eacts"><button type="button" id="eUndo" disabled>Undo</button><button type="button" id="eExport" class="primary">Export GPX</button><button type="button" id="eDone">Done</button></div>
+</div>
 <section class="sheet" id="sheet">
   <div class="body">
     <div class="brand"><h1>Flat<i>Route</i></h1><small id="pinlabel">No pin yet</small></div>
@@ -817,7 +838,7 @@ body:not(.owner) .owner-only{display:none}
   /* ---------- route editing: skip a block ---------- */
   /* Cheapest way from `from` to `to` that avoids banned edges. Cost favors flat streets (a 3% block costs ~2x),
      and lightly discourages reusing streets the route already runs. Capped in length so a "detour" stays local. */
-  function detour(G, from, to, banned, inRoute, maxLen) {
+  function detour(G, from, to, banned, inRoute, maxLen, mult = 1.4) {
     const E = G.E, h = new Heap(), cost = new Map([[from, 0]]), len = new Map([[from, 0]]), prev = new Map(), done = new Set();
     h.push(0, from);
     while (h.size) {
@@ -828,7 +849,7 @@ body:not(.owner) .owner-only{display:none}
         if (banned.has(ei)) continue;
         const ed = E[ei], v = ed.a === u ? ed.b : ed.a, nl = len.get(u) + ed.len;
         if (done.has(v) || nl > maxLen) continue;
-        const nc = c + ed.len * (1 + 30 * ed.g) * (inRoute.has(ei) ? 1.4 : 1);
+        const nc = c + ed.len * (1 + 30 * ed.g) * (inRoute.has(ei) ? mult : 1);
         if (!cost.has(v) || nc < cost.get(v)) { cost.set(v, nc); len.set(v, nl); prev.set(v, [ei, u]); h.push(nc, v); }
       }
     }
@@ -854,10 +875,54 @@ body:not(.owner) .owner-only{display:none}
       }
       for (const x of d) out.push(x);
     }
+    return { route: finishEdit(G, route, out, banned) };
+  }
+  function finishEdit(G, route, out, banned) {
     const r = makeRoute(G, out, route.type);
     if (route.type === 'loop') { const ls = loopStats(out, G); Object.assign(r, { streets: ls.streets, repeat: ls.repeat, live: ls.live, newStreets: ls.newStreets, newLen: ls.newLen }); }
     r.banned = banned; r.name = route.name; r.base = route.base || { len: route.len, climb: route.climb, mx: route.mx }; r.edits = (route.edits || 0) + 1;
-    return { route: r };
+    return r;
+  }
+
+  /* Snap a point to the street network: nearest street within maxM, then the nearer of that block's two ends. */
+  function nearestVertex(G, lat, lon, maxM) {
+    const cell = 0.002;
+    if (!G._grid) {
+      const g = G._grid = new Map();
+      G.E.forEach((e, i) => { for (const p of e.pts) { const k = Math.floor(p[0] / cell) + ',' + Math.floor(p[1] / cell); let a = g.get(k); if (!a) g.set(k, (a = [])); if (a[a.length - 1] !== i) a.push(i); } });
+    }
+    const ci = Math.floor(lat / cell), cj = Math.floor(lon / cell); let bestE = -1, bd = maxM;
+    for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++) {
+      const a = G._grid.get(i + ',' + j); if (!a) continue;
+      for (const ei of a) for (const p of G.E[ei].pts) { const d = hav(lat, lon, p[0], p[1]); if (d < bd) { bd = d; bestE = ei; } }
+    }
+    if (bestE < 0) return -1;
+    const e = G.E[bestE], va = G.V[e.a], vb = G.V[e.b];
+    return hav(lat, lon, va[0], va[1]) <= hav(lat, lon, vb[0], vb[1]) ? e.a : e.b;
+  }
+  /* Drag the route at block segIdx onto vertex v. Re-solves only an "elastic window" around the grab point
+     (at least 250 m each side, growing with the drag); everything outside it stays exactly as it was. */
+  function reshape(G, route, segIdx, v, dragM) {
+    const E = G.E, n = route.steps.length;
+    const k = segIdx < n ? segIdx : 2 * n - 1 - segIdx;
+    if (k < 0 || k >= n) return { err: 'That spot isn\u2019t on the route.' };
+    const steps = route.steps.slice();
+    if (route.type === 'ob' && steps[n - 1].frac < 1) steps[n - 1] = { e: steps[n - 1].e, fwd: steps[n - 1].fwd, frac: 1 };
+    const W = Math.max(250, 1.5 * dragM), len = (i) => E[steps[i].e].len;
+    let i0 = k, i1 = k, acc = 0;
+    while (i0 > 0 && acc < W) { i0--; acc += len(i0); }
+    acc = 0;
+    while (i1 < n - 1 && acc < W) { i1++; acc += len(i1); }
+    const P = steps[i0].fwd ? E[steps[i0].e].a : E[steps[i0].e].b, Q = steps[i1].fwd ? E[steps[i1].e].b : E[steps[i1].e].a;
+    const banned = route.banned || new Set(), reach = Math.max(1500, 3 * hav(G.V[P][0], G.V[P][1], G.V[v][0], G.V[v][1]) + 600);
+    const legA = P === v ? [] : detour(G, P, v, banned, new Set(), reach, 1);
+    if (!legA) return { err: 'No street route to there.' };
+    const legB = v === Q ? [] : detour(G, v, Q, banned, new Set(legA.map((x) => x.e)), reach, 4); // don't just retrace the way in
+    if (!legB) return { err: 'No street route back from there.' };
+    const out = steps.slice(0, i0).concat(legA, legB, steps.slice(i1 + 1));
+    const same = out.length === n && out.every((x, i) => x.e === route.steps[i].e && x.fwd === route.steps[i].fwd && x.frac === route.steps[i].frac);
+    if (same) return { err: 'No change.' };
+    return { route: finishEdit(G, route, out, banned) };
   }
 
   /* ---------- starts, ranking ---------- */
@@ -956,7 +1021,7 @@ body:not(.owner) .owner-only{display:none}
     return rank(top, mode, D, tol, 3, streets, !!opts.hist);
   }
 
-  root.FlatCore = { hav, dest, buildGraph, markRun, smoothClimb, setClimb, computeProfiles, findRoutes, Searcher, makeRoute, avoidBlock };
+  root.FlatCore = { hav, dest, buildGraph, markRun, smoothClimb, setClimb, computeProfiles, findRoutes, Searcher, makeRoute, avoidBlock, reshape, nearestVertex };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1010,7 +1075,7 @@ function drawPin() {
   $('go').disabled = S.busy; $('go').textContent = S.busy ? 'Searching…' : 'Find flat routes';
 }
 function setPin(p) { S.pin = p; store.set('pin', p); drawPin(); clearRoutes(); }
-map.on('click', (e) => { if (!S.busy) { setPin([e.latlng.lat, e.latlng.lng]); if (narrow()) setDrawer(true); } });
+map.on('click', (e) => { if (!S.busy && !S.edit) { setPin([e.latlng.lat, e.latlng.lng]); if (narrow()) setDrawer(true); } });
 $('locate').onclick = () => {
   if (!navigator.geolocation) return status('This browser can’t share your location. Tap the map instead.', true);
   navigator.geolocation.getCurrentPosition(
@@ -1047,7 +1112,7 @@ function setDrawer(open) {
   updateFbar();
 }
 function updateFbar() {
-  const show = narrow() && $('sheet').classList.contains('min') && S.routes && S.routes.length > 0;
+  const show = narrow() && $('sheet').classList.contains('min') && S.routes && S.routes.length > 0 && !S.edit;
   $('fbar').hidden = !show;
 }
 $('drawerBtn').onclick = () => setDrawer($('sheet').classList.contains('min'));
@@ -1402,7 +1467,7 @@ function startName(G, r) {
 
 /* ---------- rendering ---------- */
 const gradeColor = (g) => css(g <= 0.01 ? '--g1' : g <= 0.025 ? '--g2' : g <= 0.04 ? '--g3' : '--g4');
-function clearRoutes() { S.routes = []; if ($('fbar')) $('fbar').hidden = true; routeLayer.clearLayers(); turnLayer.clearLayers(); followLayer.clearLayers(); if ($('toast')) $('toast').hidden = true; map.closePopup(); if ($('directions')) $('directions').innerHTML = ''; $('results').innerHTML = ''; }
+function clearRoutes() { S.routes = []; if ($('fbar')) $('fbar').hidden = true; routeLayer.clearLayers(); turnLayer.clearLayers(); followLayer.clearLayers(); if ($('toast')) $('toast').hidden = true; map.closePopup(); if (S.edit) setEdit(false); syncEditBtn(); if ($('directions')) $('directions').innerHTML = ''; $('results').innerHTML = ''; }
 function drawRoutes(fit) {
   routeLayer.clearLayers(); turnLayer.clearLayers();
   const surf = css('--surface');
@@ -1416,8 +1481,6 @@ function drawRoutes(fit) {
     L.polyline(r.coords, { color: surf, weight: 10, opacity: 0.95, lineJoin: 'round', interactive: false }).addTo(routeLayer);
     const byNew = H && r.type === 'loop' && S.streets;
     for (const s of r.segs) L.polyline(s.pts, { color: byNew ? css(s.run ? '--alt' : '--accent') : gradeColor(s.g), weight: byNew && !s.run ? 7 : 6, lineJoin: 'round', lineCap: 'round' }).addTo(routeLayer);
-    // tap any block (wide invisible hit area, easy with a thumb) to preview and skip it
-    r.segs.forEach((sg, si) => L.polyline(sg.pts, { weight: 26, opacity: 0, bubblingMouseEvents: false }).addTo(routeLayer).on('click', (ev) => blockPopup(ev.latlng, si)));
     // mile markers + direction arrows along the selected route
     let acc = 0, nextMile = MI, nextArrow = MI / 8;
     for (let i = 1; i < r.coords.length; i++) {
@@ -1554,7 +1617,7 @@ function drawFollow(pan) {
 function visibleRect() {
   const sz = map.getSize(), sh = $('sheet'), M = 56;
   const covered = narrow() && sh.classList.contains('min') ? 0 : sh.offsetLeft + sh.offsetWidth;
-  const bottom = !$('fbar').hidden ? $('fbar').getBoundingClientRect().top : sz.y;
+  const bottom = !$('ebar').hidden ? $('ebar').getBoundingClientRect().top : !$('fbar').hidden ? $('fbar').getBoundingClientRect().top : sz.y;
   return { l: covered + 24, r: sz.x - 24, t: M, b: Math.min(sz.y, bottom) - 24 };
 }
 function ensureVisible(pt) {
@@ -1617,17 +1680,17 @@ function blockPopup(latlng, si) {
     btn.onclick = () => { map.closePopup(); applyEdit(res.route); };
   }
   box.appendChild(btn);
-  L.popup({ closeButton: false, autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(box).openOn(map);
+  L.popup({ closeButton: false, closeOnClick: false, autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(box).openOn(map);
 }
 function refreshRoute(keep) {
-  renderResults(); drawRoutes(false);
+  renderResults(); drawRoutes(false); updateEstat();
   followD = Math.min(keep, S.routes[S.sel].len); drawFollow(false);
 }
-function applyEdit(nr) {
+function applyEdit(nr, msg = 'Skipped a block') {
   const old = S.routes[S.sel], keep = followD;
   nr.hist = (old.hist || []).concat([old]);
   S.routes[S.sel] = nr; refreshRoute(keep);
-  toast(`Skipped a block \u00b7 ${sgn((nr.len - old.len) / MI, 2)} mi \u00b7 ${sgn((nr.climb - old.climb) * FT, 0)} ft climb`);
+  toast(`${msg} \u00b7 ${sgn((nr.len - old.len) / MI, 2)} mi \u00b7 ${sgn((nr.climb - old.climb) * FT, 0)} ft climb`);
 }
 function undoEdit(toBase, i = S.sel) {
   const r = S.routes[i]; if (!r || !r.hist || !r.hist.length) return;
@@ -1643,10 +1706,99 @@ function toast(msg) {
   t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 9000);
 }
 
+/* ---------- edit mode: touch the line anywhere and drag to reshape ---------- */
+S.edit = false;
+const previewPane = map.createPane('preview'); previewPane.style.zIndex = 420; previewPane.style.pointerEvents = 'none';
+const previewLayer = L.layerGroup().addTo(map);
+function estatText(n, ref) {
+  const dl = (a, g) => (n === ref ? '' : ` (${sgn(a, g)})`);
+  return `${(n.len / MI).toFixed(2)} mi${dl((n.len - ref.len) / MI, 2)} \u00b7 ${Math.round(n.climb * FT)} ft climb${dl((n.climb - ref.climb) * FT, 0)} \u00b7 max grade ${(n.mx * 100).toFixed(1)}%`;
+}
+function updateEstat(pv, msg) {
+  if (!S.edit) return;
+  const r = S.routes[S.sel]; if (!r) return;
+  const el = $('estat'); el.classList.toggle('pv', !!(pv || msg));
+  el.textContent = msg || (pv ? 'Release to apply: ' + estatText(pv, r.base || r) : estatText(r, r.base || r) + (r.edits ? ' vs. original' : ''));
+  $('eUndo').disabled = !(r.hist && r.hist.length);
+}
+function syncEditBtn() { const has = S.routes.length > 0; $('editBtn').hidden = !has; if (!has && S.edit) setEdit(false); }
+function setEdit(on) {
+  S.edit = on; $('editBtn').classList.toggle('on', on); $('editBtn').setAttribute('aria-pressed', String(on));
+  $('ebar').hidden = !on; map.closePopup(); previewLayer.clearLayers();
+  if (on && narrow()) setDrawer(false);
+  updateFbar(); updateEstat();
+}
+$('editBtn').onclick = () => setEdit(!S.edit);
+$('eDone').onclick = () => setEdit(false);
+$('eUndo').onclick = () => undoEdit(false);
+$('eExport').onclick = () => { const r = S.routes[S.sel]; if (r) exportGPX(r, S.sel); };
+
+const mapEl = map.getContainer(); let drag = null;
+function hitRoute(pt) {
+  const r = S.routes[S.sel]; let best = null;
+  if (!r) return null;
+  r.segs.forEach((sg, si) => {
+    let p = map.latLngToContainerPoint(sg.pts[0]);
+    for (let j = 1; j < sg.pts.length; j++) {
+      const q = map.latLngToContainerPoint(sg.pts[j]), d = L.LineUtil.pointToSegmentDistance(pt, p, q);
+      if (!best || d < best.d) best = { si, d, at: map.containerPointToLatLng(L.LineUtil.closestPointOnSegment(pt, p, q)) };
+      p = q;
+    }
+  });
+  return best && best.d <= 30 ? best : null;
+}
+function cpt(e) { const b = mapEl.getBoundingClientRect(); return L.point(e.clientX - b.left, e.clientY - b.top); }
+mapEl.addEventListener('pointerdown', (e) => {
+  if (!S.edit || !e.isPrimary || e.button > 0 || drag) return;
+  if (e.target.closest('.leaflet-popup, .leaflet-control, button')) return;
+  const r = S.routes[S.sel]; if (!r || !S.G) return;
+  const pt = cpt(e), hit = hitRoute(pt);
+  if (!hit) { map.closePopup(); return; } // off the line: pan as usual
+  e.stopPropagation(); e.preventDefault();
+  try { mapEl.setPointerCapture(e.pointerId); } catch {}
+  map.dragging.disable();
+  drag = { pid: e.pointerId, si: hit.si, at: hit.at, pt0: pt, moved: false, last: -2, res: null, t: 0, pt };
+}, true);
+function dragUpdate(force) {
+  const r = S.routes[S.sel], ll = map.containerPointToLatLng(drag.pt);
+  const v = C.nearestVertex(S.G, ll.lat, ll.lng, 60);
+  if (v === drag.last && !force) return;
+  drag.last = v; drag.res = null; previewLayer.clearLayers();
+  if (v < 0) { updateEstat(null, 'No street here'); return; }
+  const res = C.reshape(S.G, r, drag.si, v, C.hav(drag.at.lat, drag.at.lng, ll.lat, ll.lng));
+  if (res.err) { updateEstat(null, res.err === 'No change.' ? 'Drag to a different street' : res.err); return; }
+  drag.res = res;
+  L.polyline(res.route.coords, { pane: 'preview', color: css('--accent'), weight: 7, opacity: 0.95, lineJoin: 'round', lineCap: 'round' }).addTo(previewLayer);
+  const vp = S.G.V[v]; L.circleMarker(vp, { pane: 'preview', radius: 8, color: css('--surface'), weight: 3, fillColor: css('--accent'), fillOpacity: 1 }).addTo(previewLayer);
+  updateEstat(res.route);
+}
+mapEl.addEventListener('pointermove', (e) => {
+  if (!drag || e.pointerId !== drag.pid) return;
+  drag.pt = cpt(e);
+  if (!drag.moved) { if (drag.pt.distanceTo(drag.pt0) < 8) return; drag.moved = true; mapEl.classList.add('reshaping'); }
+  clearTimeout(drag.timer);
+  const now = performance.now();
+  if (now - drag.t < 60) { drag.timer = setTimeout(() => { if (drag) { drag.t = performance.now(); dragUpdate(false); } }, 70); return; } // trailing update so the preview never lags the finger
+  drag.t = now; dragUpdate(false);
+});
+function endDrag(e, cancel) {
+  if (!drag || e.pointerId !== drag.pid) return;
+  clearTimeout(drag.timer); const d = drag; drag = null;
+  try { mapEl.releasePointerCapture(e.pointerId); } catch {}
+  map.dragging.enable(); mapEl.classList.remove('reshaping');
+  if (cancel) { previewLayer.clearLayers(); updateEstat(); return; }
+  if (!d.moved) { blockPopup(d.at, d.si); return; } // a tap: preview and skip this block
+  drag = d; drag.pt = cpt(e); dragUpdate(true); const res = drag.res; drag = null;
+  previewLayer.clearLayers();
+  if (res && res.route) applyEdit(res.route, 'Reshaped the route'); else updateEstat();
+}
+mapEl.addEventListener('pointerup', (e) => endDrag(e, false));
+mapEl.addEventListener('pointercancel', (e) => endDrag(e, true));
+
 function select(i) {
   S.sel = i; drawRoutes(false); renderDirections();
   $('results').querySelectorAll('.card').forEach((c, j) => c.setAttribute('aria-pressed', String(j === i)));
-  const r = S.routes[i]; ensureVisible(r.start);
+  const r = S.routes[i]; ensureVisible(r.start); updateEstat();
 }
 function profileSVG(r) {
   const W = 320, H = 56, P = 2, d = r.prof.d, z = r.prof.z;
@@ -1702,11 +1854,11 @@ function renderResults() {
     if (rb) rb.onclick = () => undoEdit(true, i);
     box.appendChild(card);
   });
-  renderDirections();
+  renderDirections(); syncEditBtn();
 }
 function exportGPX(r, i) {
   const elev = cache && cache.elev;
-  const name = `FlatRoute ${(r.len / MI).toFixed(1)} mi ${r.type === 'ob' ? 'out-and-back' : 'loop'}`;
+  const name = `FlatRoute ${(r.len / MI).toFixed(1)} mi ${r.type === 'ob' ? 'out-and-back' : 'loop'}${r.edits ? ' (edited)' : ''}`;
   const pts = r.coords.map((p) => `<trkpt lat="${p[0].toFixed(6)}" lon="${p[1].toFixed(6)}">${elev && isFinite(elev(p[0], p[1])) ? `<ele>${elev(p[0], p[1]).toFixed(1)}</ele>` : ''}</trkpt>`).join('\n');
   const gpx = `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="FlatRoute" xmlns="http://www.topografix.com/GPX/1/1">
